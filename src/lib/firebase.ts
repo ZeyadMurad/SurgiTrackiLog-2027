@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
   initializeFirestore,
@@ -8,10 +8,46 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigFallback from '../../firebase-applet-config.json';
+
+/**
+ * SECURITY: Firebase credentials are read from environment variables (.env file,
+ * excluded from Git via .gitignore) instead of being hardcoded in the repository.
+ * In Vite, only variables prefixed with VITE_ are exposed to the client bundle.
+ * See .env.example for the required variable names.
+ * The committed `firebase-applet-config.json` contains EMPTY values on purpose:
+ * AI Studio re-injects the real config at deploy time; everywhere else you must
+ * copy .env.example to .env and fill in the values.
+ */
+const firebaseConfigFromEnv: FirebaseOptions = {
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || undefined,
+};
+
+const hasEnvConfig = Boolean(
+  firebaseConfigFromEnv.projectId && firebaseConfigFromEnv.apiKey && firebaseConfigFromEnv.appId
+);
+
+if (!hasEnvConfig) {
+  console.warn(
+    '[SurgiTrack] Firebase environment variables are missing (VITE_FIREBASE_*). ' +
+      'Copy .env.example to .env and fill in the values. Falling back to firebase-applet-config.json.'
+  );
+}
+
+const firebaseConfig: FirebaseOptions = hasEnvConfig
+  ? firebaseConfigFromEnv
+  : (firebaseConfigFallback as FirebaseOptions);
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
+const firestoreDbId =
+  import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
+  (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
 
 // Initialize Firestore with robust auto-detect long-polling, ignoreUndefinedProperties, and persistent local caching
 let firestoreInstance;

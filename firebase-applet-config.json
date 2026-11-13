@@ -1,12 +1,13 @@
 {
-  "projectId": "gen-lang-client-0009367276",
-  "appId": "1:182458523631:web:f6108534759c841b7fa01a",
-  "apiKey": "AIzaSyDDbBOgZLMbB3dNHcfnGk1BG-a_nKjcESg",
-  "authDomain": "gen-lang-client-0009367276.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-surgitrackprofes-c695c53a-82c9-402b-a203-bb6732c49ea6",
-  "storageBucket": "gen-lang-client-0009367276.firebasestorage.app",
-  "messagingSenderId": "182458523631",
+  "_comment": "SECURITY: values intentionally empty — Firebase credentials live ONLY in environment variables (.env via VITE_FIREBASE_*, git-ignored). See .env.example. AI Studio re-injects the real values here at deploy time.",
+  "projectId": "",
+  "appId": "",
+  "apiKey": "",
+  "authDomain": "",
+  "firestoreDatabaseId": "",
+  "storageBucket": "",
+  "messagingSenderId": "",
   "measurementId": "",
-  "oAuthClientId": "182458523631-bboj8eu4rccrk2jgpnjanem0kegu39d4.apps.googleusercontent.com",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
