@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import nodemailer, { Transporter } from 'nodemailer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -25,7 +26,100 @@ const app = express();
 const port = Number(getCliFlag('--port') || process.env.PORT || 3000);
 const host = getCliFlag('--host') || process.env.HOST || '0.0.0.0';
 
-app.use(express.json({ limit: '10mb' }));
+// SECURITY FIX: run behind exactly one trusted reverse-proxy tier (Cloud Run / AI Studio LB),
+// so req.ip resolves from X-Forwarded-For safely for rate limiting.
+app.set('trust proxy', 1);
+
+// SECURITY FIX: baseline hardening headers + reduced body limit (was 10mb).
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+app.use(express.json({ limit: '2mb' }));
+
+// ----------------------------------------------------------------------------
+// SECURITY FIX: in-memory per-IP rate limiting (token-window buckets).
+// Previously ALL endpoints (verification email sender, Gemini AI, PubMed proxy)
+// were completely unthrottled: a single client could trigger mass-email abuse
+// (email bombing) and drain the Gemini API key quota.
+// ----------------------------------------------------------------------------
+interface RateBucket { count: number; resetAt: number }
+const rateBuckets = new Map<string, RateBucket>();
+const emailCooldowns = new Map<string, number>(); // per-email last-send timestamp
+
+const sweepRateState = () => {
+  const now = Date.now();
+  for (const [key, bucket] of rateBuckets) {
+    if (now > bucket.resetAt) rateBuckets.delete(key);
+  }
+  for (const [email, ts] of emailCooldowns) {
+    if (now - ts > 10 * 60 * 1000) emailCooldowns.delete(email);
+  }
+};
+const rateSweepTimer = setInterval(sweepRateState, 5 * 60 * 1000);
+rateSweepTimer.unref?.();
+
+const clientIpOf = (req: Request): string =>
+  (req.ip || req.socket?.remoteAddress || 'unknown').toString();
+
+function rateLimit(bucketName: string, maxRequests: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = `${bucketName}:${clientIpOf(req)}`;
+    const now = Date.now();
+    let bucket = rateBuckets.get(key);
+    if (!bucket || now > bucket.resetAt) {
+      bucket = { count: 0, resetAt: now + windowMs };
+      rateBuckets.set(key, bucket);
+    }
+    bucket.count += 1;
+    if (bucket.count > maxRequests) {
+      const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
+      console.warn(`[SurgiTrack Security] Rate limit hit (${bucketName}) for ${clientIpOf(req)}`);
+      res.status(429).json({ error: 'Too many requests. Please slow down and try again later.' });
+      return;
+    }
+    next();
+  };
+}
+
+const RATE_LIMITS = {
+  verificationEmail: { max: 5, windowMs: 10 * 60 * 1000 },   // 5 emails / 10 min / IP
+  gemini: { max: 15, windowMs: 60 * 1000 },                    // 15 AI calls / min / IP
+  authQueries: { max: 30, windowMs: 60 * 1000 },               // token & status checks / min
+  news: { max: 30, windowMs: 60 * 1000 },
+  pubmed: { max: 20, windowMs: 60 * 1000 },
+};
+
+// SECURITY FIX: whitelist of languages accepted by AI endpoints (prevents prompt
+// injection via the `language` field) + safe text sanitiser for prompt fields.
+const ALLOWED_LANGUAGES = ['en', 'de', 'ar'] as const;
+const sanitizeLang = (value: unknown): string =>
+  ALLOWED_LANGUAGES.includes(String(value || '').toLowerCase() as (typeof ALLOWED_LANGUAGES)[number])
+    ? String(value).toLowerCase()
+    : 'en';
+const sanitizeText = (value: unknown, maxLength: number): string =>
+  typeof value === 'string' ? value.slice(0, maxLength) : '';
+
+// SECURITY FIX: verification links were previously built from the raw Host /
+// X-Forwarded-Proto headers, letting an attacker poison the link inside the email.
+// APP_URL (env) is now the canonical base; the Host header is only used as a
+// strictly-validated fallback.
+const SAFE_HOST_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{2,5})?$/;
+function resolveBaseUrl(req: Request): string {
+  const appUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\/\S+$/i.test(appUrl)) {
+    return appUrl;
+  }
+  const rawHost = (req.get('host') || '').trim().toLowerCase();
+  const hostOk = SAFE_HOST_PATTERN.test(rawHost) && !rawHost.includes('..') && rawHost.length <= 253;
+  const protoRaw = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim().toLowerCase();
+  const proto = protoRaw === 'https' ? 'https' : 'http';
+  return `${proto}://${hostOk ? rawHost : 'localhost:3000'}`;
+}
+
 app.get('/api/health', (_req, res) => {
   res.status(200).json({ status: 'ok', port });
 });
@@ -40,9 +134,12 @@ const getAI = () => {
 };
 
 // Endpoint 1: Draft Formal Recommendation Letter
-app.post('/api/gemini/recommendation', async (req, res) => {
+// SECURITY FIX: rate-limited (15/min/IP) to protect the Gemini API key quota.
+app.post('/api/gemini/recommendation', rateLimit('gemini', RATE_LIMITS.gemini.max, RATE_LIMITS.gemini.windowMs), async (req, res) => {
   try {
-    const { supervisor, trainee, training, language } = req.body;
+    const { supervisor, trainee, training } = req.body;
+    // SECURITY FIX: language is whitelisted (was injected raw into the prompt).
+    const language = sanitizeLang(req.body?.language);
 
     if (!supervisor || !trainee || !training) {
       return res.status(400).json({ error: 'Missing required recommendation data.' });
@@ -108,9 +205,13 @@ Generate ONLY the formatted recommendation letter text with elegant headers, par
 });
 
 // Endpoint 2: AI Medical Assistant (Strictly Generic & Educational)
-app.post('/api/gemini/assistant', async (req, res) => {
+// SECURITY FIX: rate-limited (15/min/IP) + message capped to 8000 chars.
+app.post('/api/gemini/assistant', rateLimit('gemini', RATE_LIMITS.gemini.max, RATE_LIMITS.gemini.windowMs), async (req, res) => {
   try {
-    const { message, contextType, language } = req.body;
+    // SECURITY FIX: language & context whitelisted/capped (was injected raw into the system prompt).
+    const message = sanitizeText(req.body?.message, 8_000);
+    const contextType = sanitizeText(req.body?.contextType, 200);
+    const language = sanitizeLang(req.body?.language);
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required.' });
@@ -191,15 +292,31 @@ const verificationTokens = new Map<string, EmailVerificationRecord>();
 const verifiedEmails = new Set<string>(['zeadmorud2030@gmail.com']);
 
 // Endpoint: Send Secure Clickable Email Verification Link (Strict 30-Second Expiry)
-app.post('/api/auth/send-verification-link', async (req, res) => {
+app.post(
+  '/api/auth/send-verification-link',
+  // SECURITY FIX: throttled — 5 emails / 10 min / IP (was an unthrottled email-bombing vector).
+  rateLimit('verify-email', RATE_LIMITS.verificationEmail.max, RATE_LIMITS.verificationEmail.windowMs),
+  async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
+    if (!email || typeof email !== 'string' || !/^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/.test(email)) {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
     const now = Date.now();
+
+    // SECURITY FIX: per-email cooldown (60 s) — a single address cannot be hammered
+    // with verification emails even from rotating IPs.
+    const lastSentAt = emailCooldowns.get(cleanEmail) || 0;
+    if (now - lastSentAt < 60 * 1000) {
+      const retryAfterSec = Math.ceil((60 * 1000 - (now - lastSentAt)) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        error: 'A verification link was just sent to this address. Please wait before requesting another.',
+      });
+    }
+    emailCooldowns.set(cleanEmail, now);
 
     // Invalidate any existing unused tokens for this account (Requirement F)
     for (const [t, record] of verificationTokens.entries()) {
@@ -220,10 +337,10 @@ app.post('/api/auth/send-verification-link', async (req, res) => {
       used: false,
     });
 
-    // Determine host URL for verification link
-    const hostHeader = req.get('host') || 'localhost:3000';
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const baseUrl = `${protocol}://${hostHeader}`;
+    // SECURITY FIX: base URL now comes from APP_URL (canonical, from env) with a strictly
+    // validated Host fallback — previously the raw Host / X-Forwarded-Proto headers were
+    // used, allowing an attacker to poison the verification link sent inside the email.
+    const baseUrl = resolveBaseUrl(req);
     const verificationUrl = `${baseUrl}/verify-email?token=${token}&email=${encodeURIComponent(cleanEmail)}`;
 
     console.log(`[SurgiTrack Security] Real Verification Link generated for ${cleanEmail}: ${verificationUrl} (Expires in 30s)`);
@@ -295,7 +412,11 @@ app.post('/api/auth/send-verification-link', async (req, res) => {
 });
 
 // Endpoint: Validate Verification Token (Strict 30-Second Server-Enforced Expiration)
-app.get('/api/auth/verify-token', (req, res) => {
+// SECURITY FIX: throttled (30/min/IP) to prevent token brute-forcing.
+app.get(
+  '/api/auth/verify-token',
+  rateLimit('verify-token', RATE_LIMITS.authQueries.max, RATE_LIMITS.authQueries.windowMs),
+  (req, res) => {
   const token = req.query.token as string;
   if (!token || typeof token !== 'string') {
     return res.status(400).json({ valid: false, error: 'Verification token is required.' });
@@ -348,7 +469,11 @@ app.get('/api/auth/verify-token', (req, res) => {
 });
 
 // Endpoint: Check Account Verification Status (Requirement H)
-app.get('/api/auth/verification-status', (req, res) => {
+// SECURITY FIX: throttled (30/min/IP) to slow down enumeration of verified addresses.
+app.get(
+  '/api/auth/verification-status',
+  rateLimit('verify-status', RATE_LIMITS.authQueries.max, RATE_LIMITS.authQueries.windowMs),
+  (req, res) => {
   const email = (req.query.email as string || '').trim().toLowerCase();
   if (!email) {
     return res.status(400).json({ verified: false, error: 'Email parameter required.' });
@@ -429,7 +554,9 @@ let newsCache: { articles: any[]; lastFetch: number } = { articles: [], lastFetc
 
 // Endpoint 3: Dynamic Surgical News & Direct PubMed Feed Integration
 // Dynamically fetches fresh surgical literature from top journals & PubMed with continuous rotation
-app.get('/api/news', async (req, res) => {
+// SECURITY FIX: throttled (30/min/IP) — unthrottled forceRefresh=true calls let a single
+// client bypass the cache and hammer NCBI/PubMed upstream from our IP.
+app.get('/api/news', rateLimit('news', RATE_LIMITS.news.max, RATE_LIMITS.news.windowMs), async (req, res) => {
   const source = (req.query.source as string) || 'all'; // 'all', 'journals', 'pubmed'
   const category = (req.query.category as string) || 'All';
   const forceRefresh = req.query.refresh === 'true';
@@ -710,8 +837,13 @@ app.get('/api/news', async (req, res) => {
 
 // Endpoint 4: Comprehensive PubMed Search Engine with Full Archival Range (Modern & Historical, All Publication Years)
 // Supports all-years querying, pagination (retstart/page), sorting by date or relevance, and publication type filtering
-app.get('/api/pubmed/search', async (req, res) => {
-  const searchTerm = (req.query.term as string) || 'surgical randomized controlled trial';
+app.get(
+  '/api/pubmed/search',
+  // SECURITY FIX: throttled (20/min/IP) to protect the NCBI upstream service account.
+  rateLimit('pubmed-search', RATE_LIMITS.pubmed.max, RATE_LIMITS.pubmed.windowMs),
+  async (req, res) => {
+  // SECURITY FIX: search term capped to a sane length (was passed unbounded to NCBI).
+  const searchTerm = sanitizeText(req.query.term, 500) || 'surgical randomized controlled trial';
   const page = Math.max(1, Number(req.query.page) || 1);
   const maxResults = Math.min(Math.max(Number(req.query.max) || 20, 5), 100);
   const sortBy = (req.query.sort as string) === 'relevance' ? 'relevance' : 'pub_date'; // default newest date first
@@ -940,8 +1072,17 @@ app.get('/api/pubmed/search', async (req, res) => {
 });
 
 // Endpoint 5: Fetch Full Abstract & MeSH Metadata from PubMed via efetch.fcgi
-app.get('/api/pubmed/abstract/:pmid', async (req, res) => {
-  const pmid = encodeURIComponent(String(req.params.pmid).trim());
+app.get(
+  '/api/pubmed/abstract/:pmid',
+  // SECURITY FIX: throttled (20/min/IP) + pmid strictly validated as digits
+  // (was passed through with only encodeURIComponent into an upstream URL).
+  rateLimit('pubmed-abstract', RATE_LIMITS.pubmed.max, RATE_LIMITS.pubmed.windowMs),
+  async (req, res) => {
+  const rawPmid = String(req.params.pmid || '').trim();
+  if (!/^\d{1,9}$/.test(rawPmid)) {
+    return res.status(400).json({ error: 'A numeric PubMed ID (PMID) is required.' });
+  }
+  const pmid = rawPmid;
 
   try {
     const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pmid}&retmode=xml`;
@@ -1038,7 +1179,8 @@ async function startServer() {
   app.use(async (req, res, next) => {
     try {
       const vite = await vitePromise;
-      vite.middlewares(req, res, next);
+      // Cast needed: express 4's Request type vs newer @types/node IncomingMessage (dev middleware only).
+      vite.middlewares(req as unknown as import('http').IncomingMessage, res as any, next);
     } catch (err) {
       next(err);
     }
