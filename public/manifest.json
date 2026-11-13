@@ -1,0 +1,30 @@
+{
+  "name": "SurgiTrack iLog – Professional Surgical Training & Clinical Portfolio",
+  "short_name": "SurgiTrack iLog",
+  "description": "Professional surgical training, clinical logbook, and medical portfolio platform for surgeons, surgical trainees, and clinical professionals.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101C32",
+  "theme_color": "#0D9488",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/assets/aistudio/file_0000000013d082119f6968e72ed788bc_e6453226.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

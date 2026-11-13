@@ -1,0 +1,406 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 160 && id.matches('^[a-zA-Z0-9_\\.\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isEmailOwner(docData) {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string
+        && docData != null
+        && ('email' in docData)
+        && docData.email is string
+        && docData.email.lower() == request.auth.token.email.lower();
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string
+        && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com';
+    }
+
+    function isCommunityCaseOwner(caseData) {
+      return isSignedIn() && caseData != null && (
+        caseData.userId == request.auth.uid
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && ('aliasIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          && caseData.userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.aliasIds
+        )
+        || (
+          request.auth.token.email_verified == true
+          && 'authorEmail' in caseData
+          && caseData.authorEmail is string
+          && request.auth.token.email is string
+          && caseData.authorEmail.lower() == request.auth.token.email.lower()
+        )
+      );
+    }
+
+    function isUserOrAliasOwner(userId) {
+      return !isSignedIn()
+        || isOwner(userId)
+        || isSuperAdmin()
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && ('aliasIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          && userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.aliasIds
+        );
+    }
+
+    function isValidUserPayload(data) {
+      return (!('userId' in data) || (data.userId is string && data.userId.size() <= 128))
+        && (!('aliasIds' in data) || (data.aliasIds is list && data.aliasIds.size() <= 20))
+        && (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 150))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 150))
+        && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 120))
+        && (!('hospitals' in data) || (data.hospitals is string && data.hospitals.size() <= 250))
+        && (!('biography' in data) || (data.biography is string && data.biography.size() <= 2000))
+        && (!('followers' in data) || (data.followers is list && data.followers.size() <= 5000))
+        && (!('following' in data) || (data.following is list && data.following.size() <= 5000))
+        && (!('pendingFollowRequests' in data) || (data.pendingFollowRequests is list && data.pendingFollowRequests.size() <= 1000))
+        && (!('role' in data) || (data.role in ['normal_user', 'super_admin']))
+        && (!('verifiedHours' in data) || (data.verifiedHours is number && data.verifiedHours >= 0))
+        && (!('verifiedProcedures' in data) || (data.verifiedProcedures is number && data.verifiedProcedures >= 0))
+        && (!('role' in data) || data.role != 'super_admin' || (('email' in data) && data.email == 'zeadmorud2030@gmail.com'));
+    }
+
+    function isValidClinicalCasePayload(data) {
+      return (!('id' in data) || isValidId(data.id))
+        && (!('userId' in data) || (data.userId is string && data.userId.size() <= 128))
+        && (!('primaryDiagnosis' in data) || (data.primaryDiagnosis is string && data.primaryDiagnosis.size() <= 1000))
+        && (!('chiefComplaint' in data) || (data.chiefComplaint is string && data.chiefComplaint.size() <= 2500))
+        && (!('historyOfPresentIllness' in data) || (data.historyOfPresentIllness is string && data.historyOfPresentIllness.size() <= 15000))
+        && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 150))
+        && (!('hospital' in data) || (data.hospital is string && data.hospital.size() <= 300))
+        && (!('likesCount' in data) || (data.likesCount is number && data.likesCount >= 0))
+        && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
+        && (!('likedByUsers' in data) || (data.likedByUsers is list && data.likedByUsers.size() <= 5000))
+        && (!('commentsCount' in data) || (data.commentsCount is number && data.commentsCount >= 0))
+        && (!('comments' in data) || (data.comments is list && data.comments.size() <= 1000))
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 50));
+    }
+
+    function isValidNotificationPayload(data) {
+      return (!('id' in data) || isValidId(data.id))
+        && ('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 300)
+        && ('message' in data && data.message is string && data.message.size() <= 5000)
+        && (!('senderUserId' in data) || (data.senderUserId is string && data.senderUserId.size() <= 128))
+        && (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128))
+        && (!('targetCaseId' in data) || (data.targetCaseId is string && data.targetCaseId.size() <= 128))
+        && (!('readByUserIds' in data) || (data.readByUserIds is list && data.readByUserIds.size() <= 5000))
+        && (!('status' in data) || (data.status in ['pending', 'accepted', 'declined', 'rejected']));
+    }
+
+    function isValidCommunityCommentPayload(data) {
+      return data.keys().hasAll(['id', 'caseId', 'userId', 'userName', 'commentText', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'caseId', 'userId', 'userName', 'userSpecialty', 'userPhotoUrl', 'commentText', 'createdAt', 'createdAtServer'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.caseId)
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 150
+        && (!('userSpecialty' in data) || (data.userSpecialty is string && data.userSpecialty.size() <= 150))
+        && (!('userPhotoUrl' in data) || (data.userPhotoUrl is string && data.userPhotoUrl.size() <= 2048))
+        && data.commentText is string && data.commentText.size() >= 1 && data.commentText.size() <= 5000
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('createdAtServer' in data) || data.createdAtServer == request.time);
+    }
+
+    function isValidCommunityLikePayload(data) {
+      return data.keys().hasAll(['userId', 'caseId', 'fullName', 'createdAt'])
+        && data.keys().hasOnly([
+          'userId', 'caseId', 'fullName', 'specialty', 'photoUrl', 'createdAt', 'createdAtServer'
+        ])
+        && isValidId(data.userId)
+        && isValidId(data.caseId)
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 150
+        && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 150))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 2048))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('createdAtServer' in data) || data.createdAtServer == request.time);
+    }
+
+    function isValidViewedCasePayload(data) {
+      return data.keys().hasAll(['caseId', 'userId', 'viewedAt'])
+        && data.keys().hasOnly(['caseId', 'userId', 'viewedAt', 'viewedAtServer'])
+        && isValidId(data.caseId)
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.viewedAt is string && data.viewedAt.size() <= 64
+        && (!('viewedAtServer' in data) || data.viewedAtServer == request.time);
+    }
+
+    // User profiles & surgeon discovery directory
+    match /users/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if true;
+
+      allow create: if isValidId(userId)
+        && isValidUserPayload(incoming())
+        && ('userId' in incoming()) && incoming().userId == userId
+        && (!isSignedIn() || isOwner(userId) || isEmailOwner(incoming()) || isSuperAdmin());
+
+      allow update: if isValidId(userId)
+        && isValidUserPayload(incoming())
+        && (!('userId' in existing()) || incoming().userId == existing().userId)
+        && (
+          // Relationship / follow-request atomic sync update (follow, unfollow, accept, decline)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'followers', 'followersCount', 'following', 'followingCount', 'pendingFollowRequests', 'updatedAt'
+          ])
+          || (
+            // Profile / metrics / verification / alias updates require owner, verified-email sibling owner, super admin, or non-escalating usr_ session update
+            (!('role' in existing()) || incoming().role == existing().role || isSuperAdmin())
+            && (!isSignedIn() || isOwner(userId) || isEmailOwner(existing()) || isSuperAdmin())
+          )
+        );
+
+      allow delete: if isValidId(userId) && (
+        isOwner(userId)
+        || isEmailOwner(existing())
+        || isSuperAdmin()
+        || (!isSignedIn() && userId.matches('^usr_.*'))
+      );
+
+      match /clinicalCases/{caseId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(caseId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && (isUserOrAliasOwner(userId)
+            || (isSignedIn() && request.auth.token.email_verified == true && 'authorEmail' in resource.data && resource.data.authorEmail is string && resource.data.authorEmail.lower() == request.auth.token.email.lower()));
+      }
+
+      match /viewedCommunityCases/{caseId} {
+        allow get: if isValidId(userId) && isValidId(caseId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+        allow create, update: if isValidId(userId) && isValidId(caseId)
+          && isUserOrAliasOwner(userId)
+          && isValidViewedCasePayload(incoming())
+          && incoming().caseId == caseId
+          && incoming().userId == userId;
+        allow delete: if isValidId(userId) && isValidId(caseId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /supervisors/{supervisorId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(supervisorId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+
+        match /trainingRecords/{recordId} {
+          allow get, create, update, delete: if isValidId(userId) && isValidId(supervisorId) && isValidId(recordId)
+            && isUserOrAliasOwner(userId);
+          allow list: if isValidId(userId) && isValidId(supervisorId)
+            && isUserOrAliasOwner(userId);
+        }
+      }
+
+      match /trainingSessions/{sessionId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(sessionId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /skills/{skillId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(skillId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /recommendations/{recommendationId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(recommendationId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /savedArticles/{articleId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(articleId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /backups/{backupId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(backupId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+
+      match /notifications/{notificationId} {
+        allow get, create, update, delete: if isValidId(userId) && isValidId(notificationId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+      }
+    }
+
+    // Shared Surgical Community Cases Feed (Single Source of Truth)
+    match /communityCases/{caseId} {
+      allow get: if isValidId(caseId);
+      allow list: if true;
+
+      allow create: if isValidId(caseId)
+        && isValidClinicalCasePayload(incoming())
+        && ('userId' in incoming()) && ('primaryDiagnosis' in incoming())
+        && (!isSignedIn() || isCommunityCaseOwner(incoming()) || isSuperAdmin());
+
+      allow update: if isValidId(caseId)
+        && isValidClinicalCasePayload(incoming())
+        && (!('userId' in existing()) || incoming().userId == existing().userId)
+        && (
+          // Community likes and comments from peers
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'likesCount', 'likedByUserIds', 'likedByUsers', 'commentsCount', 'comments', 'updatedAt', 'updatedAtServer'
+          ])
+          || (!isSignedIn() || isCommunityCaseOwner(existing()) || isSuperAdmin())
+        );
+
+      allow delete: if isValidId(caseId)
+        && (resource == null || !isSignedIn() || isCommunityCaseOwner(existing()) || isSuperAdmin());
+
+      // Permanent Comments Subcollection (immutable once created; deletable only by author or super_admin)
+      match /comments/{commentId} {
+        allow get: if isValidId(caseId) && isValidId(commentId);
+        allow list: if isValidId(caseId);
+
+        allow create: if isValidId(caseId) && isValidId(commentId)
+          && isValidCommunityCommentPayload(incoming())
+          && incoming().caseId == caseId
+          && incoming().id == commentId
+          && (!isSignedIn() || incoming().userId == request.auth.uid || isSuperAdmin())
+          && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
+
+        allow update: if false;
+
+        allow delete: if isValidId(caseId) && isValidId(commentId)
+          && (!isSignedIn() || existing().userId == request.auth.uid || isSuperAdmin());
+      }
+
+      // Permanent Likes Subcollection (keyed per userId to prevent duplicate likes)
+      match /likes/{likeId} {
+        allow get: if isValidId(caseId) && isValidId(likeId);
+        allow list: if isValidId(caseId);
+
+        allow create: if isValidId(caseId) && isValidId(likeId)
+          && isValidCommunityLikePayload(incoming())
+          && incoming().caseId == caseId
+          && incoming().userId == likeId
+          && (!isSignedIn() || likeId == request.auth.uid || isSuperAdmin())
+          && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
+
+        allow update: if false;
+
+        allow delete: if isValidId(caseId) && isValidId(likeId)
+          && (!isSignedIn() || likeId == request.auth.uid || existing().userId == request.auth.uid || isSuperAdmin());
+      }
+    }
+
+    // Email/password fallback credential registry (salted SHA-256 hashes only)
+    match /accounts/{accountId} {
+      allow get: if isValidId(accountId);
+      allow list: if true;
+      allow create, update: if isValidId(accountId)
+        && ('uid' in incoming() && incoming().uid is string && incoming().uid.size() <= 128)
+        && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150);
+      allow delete: if isValidId(accountId) && (
+        isOwner(accountId)
+        || isEmailOwner(existing())
+        || isSuperAdmin()
+        || (!isSignedIn() && accountId.matches('^usr_.*'))
+      );
+    }
+
+    // Admin deletion tombstones
+    match /deleted_users/{uid} {
+      allow get: if isValidId(uid);
+      allow list: if isSuperAdmin() || !isSignedIn();
+      allow create, update, delete: if isValidId(uid) && (isSuperAdmin() || !isSignedIn());
+    }
+
+    // Persistent Community & Admin Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId);
+      allow list: if true;
+
+      allow create: if isValidId(notificationId)
+        && isValidNotificationPayload(incoming())
+        && (!('type' in incoming()) || incoming().type != 'admin_broadcast' || isSuperAdmin() || !isSignedIn());
+
+      allow update: if isValidId(notificationId)
+        && isValidNotificationPayload(incoming())
+        && (!('type' in existing()) || incoming().type == existing().type)
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['readByUserIds', 'status', 'updatedAt'])
+          || (
+            (!('targetUserId' in existing()) || incoming().targetUserId == existing().targetUserId)
+            && (!('senderUserId' in existing()) || incoming().senderUserId == existing().senderUserId)
+            && (!('targetCaseId' in existing()) || incoming().targetCaseId == existing().targetCaseId)
+          )
+        );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /notification_replies/{replyId} {
+      allow get: if isValidId(replyId);
+      allow list: if true;
+      allow create: if isValidId(replyId)
+        && ('replyMessage' in incoming() && incoming().replyMessage is string && incoming().replyMessage.size() <= 5000);
+      allow update, delete: if isSuperAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow get, list: if isSuperAdmin() || !isSignedIn();
+      allow create: if isValidId(logId);
+      allow update, delete: if false;
+    }
+
+    match /public/surgicalNews/{articleId} {
+      allow get, list: if true;
+      allow write: if false;
+    }
+
+    match /system/settings {
+      allow get: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /test/connection {
+      allow get: if true;
+      allow write: if false;
+    }
+  }
+}

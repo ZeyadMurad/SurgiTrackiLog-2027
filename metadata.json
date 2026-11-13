@@ -1,0 +1,6 @@
+{
+  "name": "SurgiTrack – Professional Surgical Training & Clinical Portfolio",
+  "description": "Professional surgical training, clinical logbook, and medical portfolio platform for surgeons, surgical trainees, and clinical professionals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
