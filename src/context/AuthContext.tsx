@@ -845,15 +845,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: u.email?.toLowerCase() === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
         preferredLanguage: language,
         theme: 'light',
-        emailVerified: true,
-        status: 'active',
+        emailVerified: u.emailVerified === true || (u.email || '').toLowerCase() === SUPER_ADMIN_EMAIL,
+        status: u.emailVerified === true || (u.email || '').toLowerCase() === SUPER_ADMIN_EMAIL ? 'active' : 'unverified',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
     }
 
+    // SECURITY FIX: `emailVerified` was hardcoded to `true` for ANY authenticated Firebase
+    // user, even before Google verified their email — the profile stored in Firestore then
+    // claimed a verified status the UI trusts (client-side verification forgery).
+    // It is now derived from the actual Firebase token state (admin email stays verified).
+    const isVerifiedSession =
+      u.emailVerified === true || (u.email || '').toLowerCase() === SUPER_ADMIN_EMAIL;
+
     const userProf = await unifyEmailProfile(
-      { ...baseProf, emailVerified: true, status: 'active' },
+      { ...baseProf, emailVerified: isVerifiedSession, status: isVerifiedSession ? 'active' : (baseProf.status || 'unverified') },
       u.uid
     );
     await setDoc(ref, userProf, { merge: true });
@@ -1103,8 +1110,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
               preferredLanguage: language,
               theme: 'light',
-              emailVerified: true,
-              status: 'active',
+              // SECURITY FIX: the fallback (client-side) login path previously marked every
+              // synthesized profile as emailVerified:true — a verification forgery. Only the
+              // platform admin is considered verified here; everyone else stays unverified
+              // until they verify through Firebase Auth.
+              emailVerified: cleanEmail === SUPER_ADMIN_EMAIL,
+              status: cleanEmail === SUPER_ADMIN_EMAIL ? 'active' : 'unverified',
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
