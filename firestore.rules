@@ -23,8 +23,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // SECURITY FIX: the old `!isSignedIn()` escape hatch granted OWNER-level access
+    // to every anonymous request. Anonymous access is now confined to the guest
+    // namespace only (documents whose id / owner uid matches ^usr_.*), so that
+    // unauthenticated callers can never read or mutate real (Firebase-auth) users' data.
+    function isGuestNamespace(id) {
+      return id is string && id.matches('^usr_.*');
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Guest/local session owner: an unsigned request may only touch guest documents.
+    function isGuestOrSignedOwner(userId) {
+      return isOwner(userId) || (request.auth == null && isGuestNamespace(userId));
     }
 
     function isEmailOwner(docData) {
@@ -63,11 +76,12 @@ service cloud.firestore {
     }
 
     function isUserOrAliasOwner(userId) {
-      return !isSignedIn()
-        || isOwner(userId)
+      return isOwner(userId)
         || isSuperAdmin()
+        || (request.auth == null && isGuestNamespace(userId))
         || (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          isSignedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
           && ('aliasIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
           && userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.aliasIds
         );
@@ -159,25 +173,35 @@ service cloud.firestore {
     // User profiles & surgeon discovery directory
     match /users/{userId} {
       allow get: if isValidId(userId);
-      allow list: if true;
+      // SECURITY FIX: directory listing required sign-in — previously `allow list: if true`
+      // exposed every doctor's profile (email, hospital, bio, followers) to anonymous scrapers.
+      allow list: if isSignedIn();
 
       allow create: if isValidId(userId)
         && isValidUserPayload(incoming())
         && ('userId' in incoming()) && incoming().userId == userId
-        && (!isSignedIn() || isOwner(userId) || isEmailOwner(incoming()) || isSuperAdmin());
+        // SECURITY FIX: anonymous creation is now restricted to the guest ^usr_ namespace;
+        // real (Firebase-auth) profiles must be written by their signed-in owner.
+        && (isGuestOrSignedOwner(userId) || isEmailOwner(incoming()) || isSuperAdmin());
 
       allow update: if isValidId(userId)
         && isValidUserPayload(incoming())
         && (!('userId' in existing()) || incoming().userId == existing().userId)
         && (
           // Relationship / follow-request atomic sync update (follow, unfollow, accept, decline)
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'followers', 'followersCount', 'following', 'followingCount', 'pendingFollowRequests', 'updatedAt'
-          ])
+          // SECURITY FIX: requires an authenticated session — anonymous requests can no longer
+          // forge followers/pendingFollowRequests on other users' profiles.
+          (
+            isSignedIn()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'followers', 'followersCount', 'following', 'followingCount', 'pendingFollowRequests', 'updatedAt'
+            ])
+          )
           || (
-            // Profile / metrics / verification / alias updates require owner, verified-email sibling owner, super admin, or non-escalating usr_ session update
+            // Profile / metrics / verification / alias updates require owner, verified-email sibling owner, super admin,
+            // or a guest-namespace session updating its own ^usr_ document.
             (!('role' in existing()) || incoming().role == existing().role || isSuperAdmin())
-            && (!isSignedIn() || isOwner(userId) || isEmailOwner(existing()) || isSuperAdmin())
+            && (isGuestOrSignedOwner(userId) || isEmailOwner(existing()) || isSuperAdmin())
           )
         );
 
@@ -275,21 +299,28 @@ service cloud.firestore {
       allow create: if isValidId(caseId)
         && isValidClinicalCasePayload(incoming())
         && ('userId' in incoming()) && ('primaryDiagnosis' in incoming())
-        && (!isSignedIn() || isCommunityCaseOwner(incoming()) || isSuperAdmin());
+        // SECURITY FIX: anonymous publishing is confined to the guest ^usr_ namespace;
+        // signed-in publishing requires the session to own the case payload.
+        && (isGuestNamespace(incoming().userId) || isCommunityCaseOwner(incoming()) || isSuperAdmin());
 
       allow update: if isValidId(caseId)
         && isValidClinicalCasePayload(incoming())
         && (!('userId' in existing()) || incoming().userId == existing().userId)
         && (
           // Community likes and comments from peers
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'likesCount', 'likedByUserIds', 'likedByUsers', 'commentsCount', 'comments', 'updatedAt', 'updatedAtServer'
-          ])
-          || (!isSignedIn() || isCommunityCaseOwner(existing()) || isSuperAdmin())
+          // SECURITY FIX: requires an authenticated session — anonymous requests can no longer
+          // forge likes or comments on behalf of real users.
+          (
+            isSignedIn()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'likesCount', 'likedByUserIds', 'likedByUsers', 'commentsCount', 'comments', 'updatedAt', 'updatedAtServer'
+            ])
+          )
+          || (isCommunityCaseOwner(existing()) || isSuperAdmin())
         );
 
       allow delete: if isValidId(caseId)
-        && (resource == null || !isSignedIn() || isCommunityCaseOwner(existing()) || isSuperAdmin());
+        && (isCommunityCaseOwner(existing()) || isSuperAdmin());
 
       // Permanent Comments Subcollection (immutable once created; deletable only by author or super_admin)
       match /comments/{commentId} {
@@ -300,13 +331,16 @@ service cloud.firestore {
           && isValidCommunityCommentPayload(incoming())
           && incoming().caseId == caseId
           && incoming().id == commentId
-          && (!isSignedIn() || incoming().userId == request.auth.uid || isSuperAdmin())
+          // SECURITY FIX: comments require an authenticated session bound to the claimed userId
+          // (previously anonymous callers could post comments under any real user's identity).
+          && isSignedIn()
+          && (incoming().userId == request.auth.uid || isSuperAdmin())
           && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
 
         allow update: if false;
 
         allow delete: if isValidId(caseId) && isValidId(commentId)
-          && (!isSignedIn() || existing().userId == request.auth.uid || isSuperAdmin());
+          && (existing().userId == request.auth.uid || isSuperAdmin());
       }
 
       // Permanent Likes Subcollection (keyed per userId to prevent duplicate likes)
@@ -318,56 +352,84 @@ service cloud.firestore {
           && isValidCommunityLikePayload(incoming())
           && incoming().caseId == caseId
           && incoming().userId == likeId
-          && (!isSignedIn() || likeId == request.auth.uid || isSuperAdmin())
+          // SECURITY FIX: likes require an authenticated session bound to the claimed userId
+          // (previously anonymous callers could forge likes under any real user's identity).
+          && isSignedIn()
+          && (likeId == request.auth.uid || isSuperAdmin())
           && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
 
         allow update: if false;
 
         allow delete: if isValidId(caseId) && isValidId(likeId)
-          && (!isSignedIn() || likeId == request.auth.uid || existing().userId == request.auth.uid || isSuperAdmin());
+          && (likeId == request.auth.uid || existing().userId == request.auth.uid || isSuperAdmin());
       }
     }
 
     // Email/password fallback credential registry (salted SHA-256 hashes only)
+    // SECURITY FIX (CRITICAL): this collection previously allowed anonymous list (`allow list: if true`)
+    // which dumped every email + password hash pair, and anonymous create/update which allowed
+    // account takeover by overwriting any account's hash. All access now requires the signed-in
+    // owner (doc id == auth uid) or the super admin. The cross-device fallback login flow is
+    // intentionally sacrificed in favour of Firebase Auth as the only trusted credential path.
     match /accounts/{accountId} {
-      allow get: if isValidId(accountId);
-      allow list: if true;
-      allow create, update: if isValidId(accountId)
+      allow get: if isValidId(accountId) && (isOwner(accountId) || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isValidId(accountId)
         && ('uid' in incoming() && incoming().uid is string && incoming().uid.size() <= 128)
-        && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150);
+        && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150)
+        && (isOwner(accountId) || isSuperAdmin());
+      allow update: if isValidId(accountId)
+        && ('uid' in incoming() && incoming().uid is string && incoming().uid.size() <= 128)
+        && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150)
+        && (isOwner(accountId) || isEmailOwner(existing()) || isSuperAdmin());
       allow delete: if isValidId(accountId) && (
         isOwner(accountId)
         || isEmailOwner(existing())
         || isSuperAdmin()
-        || (!isSignedIn() && accountId.matches('^usr_.*'))
       );
     }
 
     // Admin deletion tombstones
+    // SECURITY FIX: admin tooling was previously open to anonymous callers (`!isSignedIn()`);
+    // now reads are owner/super-admin only and writes are super-admin (or self tombstone) only.
     match /deleted_users/{uid} {
-      allow get: if isValidId(uid);
-      allow list: if isSuperAdmin() || !isSignedIn();
-      allow create, update, delete: if isValidId(uid) && (isSuperAdmin() || !isSignedIn());
+      allow get: if isValidId(uid) && (isOwner(uid) || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isValidId(uid) && (isOwner(uid) || isSuperAdmin());
+      allow update: if isValidId(uid) && isSuperAdmin();
+      allow delete: if isValidId(uid) && isSuperAdmin();
     }
 
     // Persistent Community & Admin Notifications
+    // SECURITY FIX: creation and read-state updates now require an authenticated session —
+    // anonymous callers can no longer impersonate senders or tamper with notification state.
     match /notifications/{notificationId} {
       allow get: if isValidId(notificationId);
-      allow list: if true;
+      allow list: if isSignedIn();
 
       allow create: if isValidId(notificationId)
+        && isSignedIn()
         && isValidNotificationPayload(incoming())
-        && (!('type' in incoming()) || incoming().type != 'admin_broadcast' || isSuperAdmin() || !isSignedIn());
+        && (!('type' in incoming()) || incoming().type != 'admin_broadcast' || isSuperAdmin());
 
       allow update: if isValidId(notificationId)
+        && isSignedIn()
         && isValidNotificationPayload(incoming())
         && (!('type' in existing()) || incoming().type == existing().type)
         && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['readByUserIds', 'status', 'updatedAt'])
+          (
+            // Read-state only: any signed-in recipient may mark their own read state.
+            incoming().diff(existing()).affectedKeys().hasOnly(['readByUserIds', 'status', 'updatedAt'])
+          )
           || (
             (!('targetUserId' in existing()) || incoming().targetUserId == existing().targetUserId)
             && (!('senderUserId' in existing()) || incoming().senderUserId == existing().senderUserId)
             && (!('targetCaseId' in existing()) || incoming().targetCaseId == existing().targetCaseId)
+            && (
+              isSuperAdmin()
+              || ('senderUserId' in existing() && existing().senderUserId == request.auth.uid)
+              || ('targetUserId' in existing() && existing().targetUserId == request.auth.uid)
+            )
           )
         );
 
@@ -376,15 +438,19 @@ service cloud.firestore {
 
     match /notification_replies/{replyId} {
       allow get: if isValidId(replyId);
-      allow list: if true;
+      // SECURITY FIX: replies required an authenticated session (was open to anonymous).
+      allow list: if isSignedIn();
       allow create: if isValidId(replyId)
+        && isSignedIn()
         && ('replyMessage' in incoming() && incoming().replyMessage is string && incoming().replyMessage.size() <= 5000);
       allow update, delete: if isSuperAdmin();
     }
 
     match /audit_logs/{logId} {
-      allow get, list: if isSuperAdmin() || !isSignedIn();
-      allow create: if isValidId(logId);
+      // SECURITY FIX: audit trail was readable and writable by anonymous callers;
+      // now read is super-admin only and writes require an authenticated session.
+      allow get, list: if isSuperAdmin();
+      allow create: if isValidId(logId) && isSignedIn();
       allow update, delete: if false;
     }
 
