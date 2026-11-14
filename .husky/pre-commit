@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Husky pre-commit hook — type-check + lint before a commit lands.
+# Warnings are allowed (CI uses --max-warnings=-1); only hard errors block.
+# Bypass in an exceptional WIP case with: git commit --no-verify (CI still enforces).
+
+echo "→ type-check (tsc --noEmit)"
+bun run lint || { echo "✖ TypeScript type-check failed. Fix the errors above before committing."; exit 1; }
+
+echo "→ lint (eslint)"
+bun run eslint || { echo "✖ ESLint reported errors. Fix them (warnings are allowed)."; exit 1; }

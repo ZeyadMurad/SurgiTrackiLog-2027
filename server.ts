@@ -7,8 +7,12 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import { rateLimit, rateLimitBackendKind } from './src/lib/rateLimiter';
 
 dotenv.config();
+
+// Resolved once at module load (used by both the headers middleware and startServer).
+const isProd = process.env.NODE_ENV === 'production';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,64 +30,75 @@ const app = express();
 const port = Number(getCliFlag('--port') || process.env.PORT || 3000);
 const host = getCliFlag('--host') || process.env.HOST || '0.0.0.0';
 
-// SECURITY FIX: run behind exactly one trusted reverse-proxy tier (Cloud Run / AI Studio LB),
-// so req.ip resolves from X-Forwarded-For safely for rate limiting.
-app.set('trust proxy', 1);
+// SECURITY: trust the configured number of reverse-proxy tiers so req.ip resolves
+// from X-Forwarded-For correctly. Default 1 (Cloud Run / AI Studio LB). Set
+// TRUSTED_PROXY_HOPS to match your deployment's proxy chain length.
+const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS ?? 1);
+app.set('trust proxy', Number.isFinite(TRUSTED_PROXY_HOPS) && TRUSTED_PROXY_HOPS >= 0 ? TRUSTED_PROXY_HOPS : 1);
 
-// SECURITY FIX: baseline hardening headers + reduced body limit (was 10mb).
+// Content Security Policy.
+// Enforcing in production (the built bundle has no inline scripts). In dev, Vite's
+// HMR / react-refresh preamble needs inline scripts, so we emit Report-Only there
+// to surface violations without breaking the dev server. Set CSP_REPORT_ONLY=1 to
+// force Report-Only even in production (safe rollout before switching to enforcing).
+const CSP_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  // Firebase Auth/Firestore + own /api (Gemini/news/pubmed/journals proxied here).
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firebasestorage.googleapis.com wss://*.firebaseio.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const PERMISSIONS_POLICY = [
+  'camera=()',
+  'microphone=()',
+  'geolocation=()',
+  'payment=()',
+  'usb=()',
+  'magnetometer=()',
+  'gyroscope=()',
+  'interest-cohort=()', // opt out of FLoC-style cohort tracking
+].join(', ');
+
+// SECURITY: baseline hardening headers + reduced body limit (was 10mb).
 app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  const reportOnly = process.env.CSP_REPORT_ONLY === '1' || !isProd;
+  res.setHeader(reportOnly ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy', CSP_POLICY);
   next();
 });
 app.use(express.json({ limit: '2mb' }));
 
 // ----------------------------------------------------------------------------
-// SECURITY FIX: in-memory per-IP rate limiting (token-window buckets).
-// Previously ALL endpoints (verification email sender, Gemini AI, PubMed proxy)
-// were completely unthrottled: a single client could trigger mass-email abuse
-// (email bombing) and drain the Gemini API key quota.
+// Per-IP rate limiting is provided by ./src/lib/rateLimiter.ts (in-memory by
+// default; Upstash Redis when UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+// are set — required for multi-instance Cloud Run). The `rateLimit` middleware
+// is imported at the top of this file; its call-site signature is unchanged.
+//
+// The email cooldown below is a SEPARATE per-email throttle on verification
+// emails (not per-IP) and stays here next to the verification-email handler.
 // ----------------------------------------------------------------------------
-interface RateBucket { count: number; resetAt: number }
-const rateBuckets = new Map<string, RateBucket>();
 const emailCooldowns = new Map<string, number>(); // per-email last-send timestamp
 
-const sweepRateState = () => {
+const sweepEmailCooldowns = () => {
   const now = Date.now();
-  for (const [key, bucket] of rateBuckets) {
-    if (now > bucket.resetAt) rateBuckets.delete(key);
-  }
   for (const [email, ts] of emailCooldowns) {
     if (now - ts > 10 * 60 * 1000) emailCooldowns.delete(email);
   }
 };
-const rateSweepTimer = setInterval(sweepRateState, 5 * 60 * 1000);
-rateSweepTimer.unref?.();
-
-const clientIpOf = (req: Request): string =>
-  (req.ip || req.socket?.remoteAddress || 'unknown').toString();
-
-function rateLimit(bucketName: string, maxRequests: number, windowMs: number) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const key = `${bucketName}:${clientIpOf(req)}`;
-    const now = Date.now();
-    let bucket = rateBuckets.get(key);
-    if (!bucket || now > bucket.resetAt) {
-      bucket = { count: 0, resetAt: now + windowMs };
-      rateBuckets.set(key, bucket);
-    }
-    bucket.count += 1;
-    if (bucket.count > maxRequests) {
-      const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-      res.setHeader('Retry-After', String(retryAfterSec));
-      console.warn(`[SurgiTrack Security] Rate limit hit (${bucketName}) for ${clientIpOf(req)}`);
-      res.status(429).json({ error: 'Too many requests. Please slow down and try again later.' });
-      return;
-    }
-    next();
-  };
-}
+const emailCooldownSweepTimer = setInterval(sweepEmailCooldowns, 5 * 60 * 1000);
+emailCooldownSweepTimer.unref?.();
 
 const RATE_LIMITS = {
   verificationEmail: { max: 5, windowMs: 10 * 60 * 1000 },   // 5 emails / 10 min / IP
@@ -123,7 +138,7 @@ function resolveBaseUrl(req: Request): string {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.status(200).json({ status: 'ok', port });
+  res.status(200).json({ status: 'ok', port, rateLimitBackend: rateLimitBackendKind });
 });
 
 // Lazy init GoogleGenAI
@@ -1614,8 +1629,6 @@ app.get(
 );
 
 async function startServer() {
-  const isProd = process.env.NODE_ENV === 'production';
-
   if (isProd) {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
