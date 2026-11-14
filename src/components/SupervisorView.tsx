@@ -19,6 +19,10 @@ import {
   Eye,
   Check,
   X,
+  Lock,
+  Fingerprint,
+  Loader2,
+  ShieldCheck,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -53,11 +57,16 @@ export const SupervisorView: React.FC = () => {
     addSkill,
     updateSkill,
     deleteSkill,
+    signTrainingRecords,
   } = useData();
 
   const { profile, language, user } = useAuth();
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
+
+  // Digital signature UI state (batch SHA-256 signing of unsigned records)
+  const [signing, setSigning] = useState(false);
+  const [signMsg, setSignMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [selectedSupId, setSelectedSupId] = useState<string>(supervisors[0]?.id || '');
   const [activeTab, setActiveTab] = useState<SupervisorPortfolioTab>('records');
@@ -359,6 +368,43 @@ export const SupervisorView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Digital Signature — batch sign unsigned records (SHA-256) */}
+                <button
+                  onClick={async () => {
+                    if (!activeSupervisor || !profile) return;
+                    const unsigned = supRecords.filter(r => !r.signature);
+                    if (unsigned.length === 0) {
+                      setSignMsg({ ok: false, text: isRTL ? 'لا توجد سجلات غير موقعة تحت هذا المشرف.' : 'No unsigned records under this supervisor.' });
+                      return;
+                    }
+                    setSigning(true);
+                    setSignMsg(null);
+                    try {
+                      const count = await signTrainingRecords(
+                        unsigned.map(r => r.id),
+                        activeSupervisor,
+                        { id: profile.userId, name: profile.fullName, position: profile.currentPosition }
+                      );
+                      setSignMsg({
+                        ok: true,
+                        text: isRTL
+                          ? `تم توقيع ${count} سجل رقمياً بواسطة ${activeSupervisor.fullName} — السجلات الآن مقفلة نهائياً بصمة SHA-256 دائمة.`
+                          : `${count} record(s) digitally signed by ${activeSupervisor.fullName} — records are now permanently locked with SHA-256 attestation.`,
+                      });
+                    } catch (e: any) {
+                      setSignMsg({ ok: false, text: e?.message || 'Signing failed.' });
+                    } finally {
+                      setSigning(false);
+                    }
+                  }}
+                  disabled={signing || supRecords.length === 0}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-3 py-1.5 rounded-xl border border-indigo-500 transition cursor-pointer"
+                  title={isRTL ? 'توقيع رقمي جماعي للسجلات غير الموقعة — يصبح السجل مقفلاً وغير قابل للتعديل بعد التوقيع' : 'Batch digital signature of unsigned records — records become locked & immutable once signed'}
+                >
+                  {signing ? <Loader2 size={14} className="animate-spin" /> : <Fingerprint size={14} />}
+                  <span className="hidden sm:inline">{isRTL ? 'توقيع رقمي' : 'Digitally Sign'}</span>
+                </button>
+
                 {/* Edit Supervisor */}
                 <button
                   onClick={() => {
@@ -440,6 +486,16 @@ export const SupervisorView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {signMsg && (
+            <div className={`rounded-xl border p-3 text-xs font-semibold flex items-center gap-2 ${signMsg.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+              {signMsg.ok ? <ShieldCheck size={14} /> : <AlertTriangle size={14} />}
+              <span>{signMsg.text}</span>
+              <button onClick={() => setSignMsg(null)} className="ml-auto opacity-60 hover:opacity-100 cursor-pointer">
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {/* Three Dedicated Portfolio Sections with Navigation Tabs */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -538,15 +594,25 @@ export const SupervisorView: React.FC = () => {
                             <td className="p-3 font-mono font-bold text-slate-800">{r.netTrainingHours}h</td>
                             <td className="p-3 text-slate-600">{r.supervisionLevel}</td>
                             <td className="p-3">
-                              {r.verified ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                  <CheckCircle2 size={11} /> Verified
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                                  Documented
-                                </span>
-                              )}
+                              <div className="flex flex-col gap-1">
+                                {r.verified ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 w-fit">
+                                    <CheckCircle2 size={11} /> Verified
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 w-fit">
+                                    Documented
+                                  </span>
+                                )}
+                                {r.signature && (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[9px] text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-full border border-indigo-200 w-fit"
+                                    title={`SHA-256: ${r.signature.contentHash}\nSigned by ${r.signature.supervisorName} · ${new Date(r.signature.signedAt).toLocaleString()}`}
+                                  >
+                                    <Lock size={9} /> Signed
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3 text-right">
                               <div className="flex items-center justify-end gap-1">
@@ -555,8 +621,9 @@ export const SupervisorView: React.FC = () => {
                                     setEditingRecord(r);
                                     setShowAddRecordModal(true);
                                   }}
-                                  className="p-1.5 text-slate-500 hover:text-teal-700 transition rounded-lg hover:bg-slate-100 cursor-pointer"
-                                  title="Edit Record"
+                                  disabled={!!r.signature}
+                                  className="p-1.5 text-slate-500 hover:text-teal-700 transition rounded-lg hover:bg-slate-100 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={r.signature ? 'Locked — digitally signed record (immutable)' : 'Edit Record'}
                                 >
                                   <Edit3 size={14} />
                                 </button>
@@ -569,8 +636,9 @@ export const SupervisorView: React.FC = () => {
                                       supervisorId: activeSupervisor.id,
                                     });
                                   }}
-                                  className="p-1.5 text-red-400 hover:text-red-700 transition rounded-lg hover:bg-red-50 cursor-pointer"
-                                  title="Delete Record"
+                                  disabled={!!r.signature}
+                                  className="p-1.5 text-red-400 hover:text-red-700 transition rounded-lg hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={r.signature ? 'Locked — digitally signed record (immutable)' : 'Delete Record'}
                                 >
                                   <Trash2 size={14} />
                                 </button>

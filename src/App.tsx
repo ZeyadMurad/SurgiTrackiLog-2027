@@ -36,6 +36,10 @@ import {
   LogOut,
   UserPlus,
   Heart,
+  Globe2,
+  LibraryBig,
+  TrendingUp,
+  MonitorSmartphone,
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
@@ -52,6 +56,9 @@ import { RecommendationGenerator } from './components/RecommendationGenerator';
 import { GermanPortfolioView } from './components/GermanPortfolioView';
 import { SurgicalNewsView } from './components/SurgicalNewsView';
 import { PubMedSearchEngineView } from './components/PubMedSearchEngineView';
+import { MedicalJournalsView } from './components/MedicalJournalsView';
+import { AccreditationView } from './components/AccreditationView';
+import { LearningCurveView } from './components/LearningCurveView';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { UserProfileView } from './components/UserProfileView';
 import { AdminPanelView } from './components/AdminPanelView';
@@ -81,6 +88,9 @@ type ActiveView =
   | 'german'
   | 'backup'
   | 'profile'
+  | 'accreditation'
+  | 'journals'
+  | 'learning'
   | 'admin';
 
 const SUPER_ADMIN_EMAIL = 'zeadmorud2030@gmail.com';
@@ -139,6 +149,25 @@ function SurgiTrackApp() {
   const [replySending, setReplySending] = useState(false);
   const [replySuccessMessage, setReplySuccessMessage] = useState('');
   const [replyError, setReplyError] = useState('');
+  const [installPromptEvt, setInstallPromptEvt] = useState<any>(null);
+
+  // PWA install prompt — capture the browser's deferred install event so the
+  // top-bar "Install App" button can trigger it on demand.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPromptEvt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!installPromptEvt) return;
+    installPromptEvt.prompt();
+    const choice = await installPromptEvt.userChoice;
+    if (choice?.outcome === 'accepted') setInstallPromptEvt(null);
+  };
 
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
@@ -282,6 +311,9 @@ function SurgiTrackApp() {
     { id: 'dashboard', label: t.dashboard, icon: LayoutDashboard },
     { id: 'cases', label: t.cases, icon: FolderPlus, count: cases.length },
     { id: 'supervisors', label: t.logbookEntries || (isRTL ? 'سجل العمليات والمهارات' : 'Logbook Entries'), icon: UserCheck, count: supervisors.length },
+    { id: 'learning', label: isRTL ? 'منحنى التعلم' : 'Learning Curve', icon: TrendingUp },
+    { id: 'accreditation', label: isRTL ? 'الاعتماد الدولي' : 'Accreditation', icon: Globe2 },
+    { id: 'journals', label: isRTL ? 'محرك المجلات الطبية' : 'Medical Journals', icon: LibraryBig },
     { id: 'recommendations', label: t.recommendations, icon: Sparkles },
     { id: 'german', label: t.germanPortfolio, icon: FileCheck2 },
     { id: 'backup', label: t.backup, icon: HardDrive },
@@ -347,6 +379,18 @@ function SurgiTrackApp() {
                 </>
               )}
             </div>
+
+            {/* PWA Install App button — visible whenever the browser offers installation */}
+            {installPromptEvt && (
+              <button
+                onClick={handleInstallApp}
+                className="flex items-center gap-1.5 bg-teal-500/20 hover:bg-teal-500/35 border border-teal-400/50 text-teal-200 hover:text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0"
+                title={isRTL ? 'تثبيت SurgiTrack كتطبيق على جهازك (يعمل دون إنترنت للبيانات المحفوظة)' : 'Install SurgiTrack as an app (offline-ready for cached data)'}
+              >
+                <MonitorSmartphone size={14} />
+                <span className="hidden sm:inline">{isRTL ? 'تثبيت التطبيق' : 'Install App'}</span>
+              </button>
+            )}
 
             {/* Trainee Portfolio Export Button */}
             <button
@@ -1071,6 +1115,9 @@ function SurgiTrackApp() {
           {activeView === 'skills' && <SkillsMatrixView />}
           {activeView === 'recommendations' && <RecommendationGenerator />}
           {activeView === 'german' && <GermanPortfolioView />}
+          {activeView === 'accreditation' && <AccreditationView />}
+          {activeView === 'journals' && <MedicalJournalsView />}
+          {activeView === 'learning' && <LearningCurveView />}
           {activeView === 'backup' && <BackupRestoreView />}
           {activeView === 'profile' && (
             <UserProfileView

@@ -91,6 +91,8 @@ const RATE_LIMITS = {
   authQueries: { max: 30, windowMs: 60 * 1000 },               // token & status checks / min
   news: { max: 30, windowMs: 60 * 1000 },
   pubmed: { max: 20, windowMs: 60 * 1000 },
+  journals: { max: 30, windowMs: 60 * 1000 },                  // Europe PMC / Crossref / Cochrane proxy
+  caseSuggestions: { max: 12, windowMs: 60 * 1000 },           // clinical AI case suggestions
 };
 
 // SECURITY FIX: whitelist of languages accepted by AI endpoints (prevents prompt
@@ -1137,6 +1139,479 @@ app.get(
     return res.status(500).json({ error: err.message || 'Error processing abstract.' });
   }
 });
+
+/* ============================================================
+   CLINICAL AI — full Gemini path + free keyless fallback + 24h cache.
+   Gemini activates automatically when GEMINI_API_KEY is set (instant,
+   higher-quality). Without a key the engine falls back to a free
+   OpenAI-compatible provider, with a 24-hour result cache so repeat
+   queries never re-hit the upstream rate limit.
+   ============================================================ */
+const AI_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MODEL_FAST = process.env.GEMINI_MODEL_FAST || 'gemini-4-hydrogen';
+const POLLINATIONS_URL = 'https://text.pollinations.ai/openai';
+
+const aiProviderName = (): 'gemini' | 'pollinations-free' =>
+  process.env.GEMINI_API_KEY ? 'gemini' : 'pollinations-free';
+
+let _geminiClient: InstanceType<typeof GoogleGenAI> | null = null;
+const getGeminiClient = (): InstanceType<typeof GoogleGenAI> => {
+  if (_geminiClient) return _geminiClient;
+  _geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  return _geminiClient;
+};
+
+const hashString = (s: string): string =>
+  crypto.createHash('sha256').update(s).digest('hex');
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+const aiCache = new Map<string, { text: string; at: number }>();
+const caseSuggestionsCache = new Map<string, { payload: any; at: number }>();
+
+const pruneCache = (map: Map<string, any>, max: number) => {
+  if (map.size <= max) return;
+  const now = Date.now();
+  for (const [k, v] of map) {
+    if (now - v.at > AI_CACHE_TTL_MS) map.delete(k);
+  }
+  if (map.size > max) {
+    const overflow = map.size - max;
+    let i = 0;
+    for (const k of map.keys()) {
+      map.delete(k);
+      if (++i >= overflow) break;
+    }
+  }
+};
+
+interface GenerateOptions {
+  cache?: boolean; // default true
+  cacheTtlMs?: number;
+}
+
+async function generateText(
+  prompt: string,
+  systemInstruction: string,
+  jsonMode = false,
+  options: GenerateOptions = {}
+): Promise<string> {
+  const useCache = options.cache !== false;
+  const provider = aiProviderName();
+  const cacheKey = `${provider}::${MODEL_FAST}::${jsonMode ? 'json' : 'txt'}::${hashString(
+    systemInstruction + '|' + prompt
+  )}`;
+
+  if (useCache) {
+    const hit = aiCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < (options.cacheTtlMs ?? AI_CACHE_TTL_MS)) {
+      return hit.text;
+    }
+  }
+
+  let text = '';
+
+  // 1) Full Gemini path — primary when GEMINI_API_KEY is configured.
+  if (provider === 'gemini') {
+    try {
+      const ai = getGeminiClient();
+      const response = await ai.models.generateContent({
+        model: MODEL_FAST,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          ...(jsonMode ? { responseMimeType: 'application/json' } : {}),
+        },
+      });
+      text = response.text || '';
+    } catch (err: any) {
+      console.warn('Gemini call failed, falling back to free provider:', err?.message);
+      text = '';
+    }
+  }
+
+  // 2) Free keyless fallback (Pollinations.ai, OpenAI-compatible). Keeps the
+  //    feature fully functional without a key; upstream enforces ~1 req/45s/IP.
+  if (!text) {
+    const doPollinations = async (): Promise<string> => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45_000);
+      try {
+        const resp = await fetch(POLLINATIONS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: 'openai',
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: prompt },
+            ],
+            referrer: 'surgitrack-professional',
+            ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+            reasoning_effort: 'low',
+            max_tokens: 6000,
+          }),
+        });
+        if (resp.status === 402 || resp.status === 429) {
+          throw new Error('FREE_AI_RATE_LIMIT');
+        }
+        if (!resp.ok) throw new Error(`Free AI HTTP ${resp.status}`);
+        const data: any = await resp.json();
+        return data?.choices?.[0]?.message?.content || '';
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    try {
+      text = await doPollinations();
+    } catch (err: any) {
+      if (err?.message === 'FREE_AI_RATE_LIMIT') {
+        await sleep(3000);
+        try {
+          text = await doPollinations();
+        } catch {
+          text = '';
+        }
+        if (!text) {
+          throw new Error(
+            'FREE_AI_RATE_LIMIT: the free AI provider limits roughly 1 request / 45 s / IP. Set GEMINI_API_KEY for instant, higher-quality responses.'
+          );
+        }
+      } else {
+        throw new Error(err?.message || 'AI provider unavailable.');
+      }
+    }
+  }
+
+  if (useCache && text) {
+    aiCache.set(cacheKey, { text, at: Date.now() });
+    pruneCache(aiCache, 500);
+  }
+
+  return text;
+}
+
+function tryParseJson(text: string): any | null {
+  if (!text) return null;
+  let s = text.trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
+  const start = s.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) return null;
+  try {
+    return JSON.parse(s.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+const coerceList = (v: any, max = 12): string[] => {
+  if (Array.isArray(v)) {
+    return v
+      .map((x) =>
+        String(typeof x === 'string' ? x : x?.name || x?.text || JSON.stringify(x)).trim()
+      )
+      .filter(Boolean)
+      .slice(0, max);
+  }
+  if (typeof v === 'string' && v.trim()) {
+    return v
+      .split(/\n|;|,|\u2022/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, max);
+  }
+  return [];
+};
+
+// AI provider status — surfaced in the UI header pill.
+app.get('/api/ai-status', (_req, res) => {
+  res.json({
+    geminiActive: !!process.env.GEMINI_API_KEY,
+    provider: aiProviderName(),
+    fastModel: MODEL_FAST,
+  });
+});
+
+// AI Case Suggestions — Gemini evidence engine (linked to PubMed client-side).
+app.post(
+  '/api/gemini/case-suggestions',
+  rateLimit('caseSuggestions', RATE_LIMITS.caseSuggestions.max, RATE_LIMITS.caseSuggestions.windowMs),
+  async (req, res) => {
+    try {
+      const diagnosis = sanitizeText(req.body?.diagnosis, 300);
+      const patientAge = sanitizeText(req.body?.patientAge, 10);
+      const patientSex = sanitizeText(req.body?.patientSex, 20);
+      const specialty = sanitizeText(req.body?.specialty, 80);
+      const language = sanitizeLang(req.body?.language);
+
+      if (!diagnosis || diagnosis.trim().length < 2) {
+        return res.status(400).json({ error: 'A clinical diagnosis is required.' });
+      }
+
+      // 24h parsed-result cache keyed by the diagnosis profile.
+      const cacheKey = `${diagnosis.trim().toLowerCase()}|${patientAge}|${patientSex}|${specialty}|${language}`;
+      const hit = caseSuggestionsCache.get(cacheKey);
+      if (hit && Date.now() - hit.at < AI_CACHE_TTL_MS) {
+        return res.json(hit.payload);
+      }
+
+      const profile = [
+        `Diagnosis: ${diagnosis}`,
+        patientAge ? `Patient age: ${patientAge}` : '',
+        patientSex ? `Patient sex: ${patientSex}` : '',
+        specialty ? `Surgical specialty: ${specialty}` : '',
+        `Output language: ${language}`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const SYSTEM =
+        'You are a senior surgical education AI. Given a clinical diagnosis, return concise, ' +
+        'evidence-based educational guidance for surgical trainees. Output STRICT JSON only (no prose, no markdown). ' +
+        'No patient identifiers. Each array max 5 items, each item <=90 chars. pubmedSearchTerms must ALWAYS be in English.';
+
+      const buildPrompt = (retry: boolean) =>
+        `${profile}\n\nReturn JSON with exactly these keys:\n` +
+        '{\n' +
+        '  "diagnosis": string,\n' +
+        '  "recommendedProcedures": string[],\n' +
+        '  "operativeSteps": string[],\n' +
+        '  "commonComplications": string[],\n' +
+        '  "keyInvestigations": string[],\n' +
+        '  "redFlags": string[],\n' +
+        '  "icd10Hints": string[],\n' +
+        '  "pubmedSearchTerms": string[],\n' +
+        '  "perioperativeConsiderations": string[]\n' +
+        '}' +
+        (retry
+          ? '\n\nNOTE: a previous attempt failed to parse. Return ONLY raw JSON, no extra text.'
+          : '');
+
+      let parsed = tryParseJson(await generateText(buildPrompt(false), SYSTEM, true, { cache: false }));
+      if (!parsed) {
+        await sleep(1500);
+        parsed = tryParseJson(await generateText(buildPrompt(true), SYSTEM, true, { cache: false }));
+      }
+
+      const payload = {
+        diagnosis: String(parsed?.diagnosis || diagnosis),
+        recommendedProcedures: coerceList(parsed?.recommendedProcedures),
+        operativeSteps: coerceList(parsed?.operativeSteps),
+        commonComplications: coerceList(parsed?.commonComplications),
+        keyInvestigations: coerceList(parsed?.keyInvestigations),
+        redFlags: coerceList(parsed?.redFlags),
+        icd10Hints: coerceList(parsed?.icd10Hints),
+        pubmedSearchTerms: coerceList(parsed?.pubmedSearchTerms),
+        perioperativeConsiderations: coerceList(parsed?.perioperativeConsiderations),
+      };
+
+      caseSuggestionsCache.set(cacheKey, { payload, at: Date.now() });
+      pruneCache(caseSuggestionsCache, 300);
+
+      return res.json(payload);
+    } catch (error: any) {
+      console.error('Error in /api/gemini/case-suggestions:', error);
+      return res.status(500).json({ error: error.message || 'AI suggestions unavailable.' });
+    }
+  }
+);
+
+/* ============================================================
+   MULTI-SOURCE MEDICAL JOURNALS ENGINE
+   Europe PMC (42M+ biomedical records) · Crossref (160M+) ·
+   Cochrane Library (gold-standard systematic reviews via Crossref).
+   ============================================================ */
+interface UnifiedArticle {
+  id: string;
+  title: string;
+  authors: string;
+  journal: string;
+  pubDate: string;
+  doi: string | null;
+  url: string;
+  fullTextUrl: string;
+  citations: number;
+  openAccess: boolean;
+  pubTypes: string[];
+  pmid?: string;
+  pmcid?: string;
+}
+
+app.get(
+  '/api/journals/search',
+  rateLimit('journals', RATE_LIMITS.journals.max, RATE_LIMITS.journals.windowMs),
+  async (req, res) => {
+    try {
+      const source = String(req.query.source || 'europmc').toLowerCase();
+      const term = sanitizeText(req.query.term, 500);
+      const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100);
+      const sort = String(req.query.sort || 'relevance');
+
+      if (!term) return res.status(400).json({ error: 'A search term is required.' });
+      if (!['europmc', 'crossref', 'cochrane'].includes(source)) {
+        return res.status(400).json({ error: 'Invalid source.' });
+      }
+
+      const max = 25;
+      const results: UnifiedArticle[] = [];
+      let totalCount = 0;
+
+      if (source === 'europmc') {
+        const sortParam =
+          sort === 'newest' ? 'SORT_PDATE:D' : sort === 'citations' ? 'SORT_CITED:y' : '';
+        const url =
+          `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(term)}` +
+          `&format=json&pageSize=${max}&page=${page}${sortParam ? `&sort=${sortParam}` : ''}`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'SurgiTrack/1.0' } });
+        if (!resp.ok) throw new Error(`Europe PMC HTTP ${resp.status}`);
+        const data: any = await resp.json();
+        totalCount = Number(data?.hitCount || 0);
+        for (const r of data?.resultList?.result || []) {
+          const authors = [r.authorString, r.authors].filter(Boolean).join(', ');
+          const pubTypes = String(r.pubType || '')
+            .split(';')
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+          results.push({
+            id: r.id || `${r.source || 'MED'}:${r.pmid || r.id}`,
+            title: r.title || '',
+            authors,
+            journal: r.journalTitle || r.journal || '',
+            pubDate: r.firstPublicationDate || r.pubYear || '',
+            doi: r.doi || null,
+            url: r.doi
+              ? `https://doi.org/${r.doi}`
+              : r.url ||
+                `https://europepmc.org/article/${r.source || 'MED'}/${r.pmid || r.id}`,
+            fullTextUrl: r.doi ? `https://doi.org/${r.doi}` : '',
+            citations: Number(r.citedByCount || 0),
+            openAccess: r.isOpenAccess === 'Y',
+            pubTypes,
+            pmid: r.pmid ? String(r.pmid) : undefined,
+            pmcid: r.pmcid ? String(r.pmcid) : undefined,
+          });
+        }
+      } else {
+        // Crossref (Cochrane = Crossref filtered by container-title).
+        const offset = (page - 1) * max;
+        let url =
+          `https://api.crossref.org/works?query=${encodeURIComponent(term)}&rows=${max}&offset=${offset}` +
+          `&select=title,author,container-title,issued,DOI,URL,type,volume,issue,page,is-referenced-by-count` +
+          `&filter=type:journal-article`;
+        if (source === 'cochrane') {
+          url += `&query.container-title=${encodeURIComponent(
+            'Cochrane Database of Systematic Reviews'
+          )}`;
+        }
+        const resp = await fetch(url, {
+          headers: { 'User-Agent': 'SurgiTrack/1.0 (mailto:contact@surgitrack.app)' },
+        });
+        if (!resp.ok) throw new Error(`Crossref HTTP ${resp.status}`);
+        const data: any = await resp.json();
+        totalCount = Number(data?.message?.['total-results'] || 0);
+        const items = data?.message?.items || [];
+        for (const w of items) {
+          const titleArr = w.title || [];
+          const title = Array.isArray(titleArr) ? titleArr[0] || '' : String(titleArr);
+          const authors = (w.author || [])
+            .map((a: any) => `${a.given ? a.given + ' ' : ''}${a.family || ''}`.trim())
+            .filter(Boolean)
+            .join(', ');
+          const issuedParts = w.issued?.['date-parts']?.[0] || [];
+          const pubDate = issuedParts.length ? issuedParts.join('-') : '';
+          const doi = w.DOI || null;
+          const container = Array.isArray(w['container-title'])
+            ? w['container-title'][0] || ''
+            : String(w['container-title'] || '');
+          results.push({
+            id: doi || w.URL || `cr:${doi || Math.random().toString(36).slice(2)}`,
+            title,
+            authors,
+            journal: container,
+            pubDate,
+            doi,
+            url: w.URL || (doi ? `https://doi.org/${doi}` : ''),
+            fullTextUrl: doi ? `https://doi.org/${doi}` : w.URL || '',
+            citations: Number(w['is-referenced-by-count'] || 0),
+            openAccess: false,
+            pubTypes: ['Journal Article'],
+          });
+        }
+      }
+
+      return res.json({
+        query: term,
+        source,
+        totalCount,
+        page,
+        totalPages: Math.max(1, Math.ceil(totalCount / max)),
+        pageSize: max,
+        sort,
+        results,
+        lastSyncDate: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('Error in /api/journals/search:', error);
+      return res.status(500).json({ error: error.message || 'Journal search unavailable.' });
+    }
+  }
+);
+
+app.get(
+  '/api/journals/abstract',
+  rateLimit('journals', RATE_LIMITS.journals.max, RATE_LIMITS.journals.windowMs),
+  async (req, res) => {
+    try {
+      const rawId = sanitizeText(req.query.id, 120);
+      if (!rawId || !rawId.includes(':')) {
+        return res.status(400).json({ error: 'A valid article id (SRC:EXTID) is required.' });
+      }
+      const [src, extId] = rawId.split(':');
+      const url =
+        `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(
+          `SRC:${src} AND EXT_ID:${extId}`
+        )}&resultType=core&format=json`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'SurgiTrack/1.0' } });
+      if (!resp.ok) throw new Error(`Europe PMC HTTP ${resp.status}`);
+      const data: any = await resp.json();
+      const r = data?.resultList?.result?.[0];
+      if (!r) return res.json({ abstract: null });
+      const meshTerms: string[] = (r.meshHeadingList?.meshHeading || [])
+        .map((m: any) => m.descriptorName)
+        .filter(Boolean)
+        .slice(0, 20);
+      return res.json({
+        title: r.title || '',
+        authors: r.authorString || '',
+        journal: r.journalTitle || '',
+        pubDate: r.firstPublicationDate || '',
+        abstract: r.abstractText || null,
+        keywords: (r.keywordList?.keyword || []).slice(0, 20),
+        meshTerms,
+        doi: r.doi || null,
+      });
+    } catch (error: any) {
+      console.error('Error in /api/journals/abstract:', error);
+      return res.status(500).json({ error: error.message || 'Abstract unavailable.' });
+    }
+  }
+);
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';

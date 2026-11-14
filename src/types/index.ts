@@ -217,6 +217,19 @@ export type SurgicalParticipationLevel =
   | 'Performed Under Supervision'
   | 'Other';
 
+export interface SupervisorSignature {
+  supervisorId: string;
+  supervisorName: string;
+  supervisorDegree?: string;
+  supervisorPosition?: string;
+  signedAt: string;          // ISO timestamp
+  contentHash: string;       // SHA-256 digest of the signed clinical content
+  algorithm: 'SHA-256';
+  traineeId: string;
+  traineeName: string;
+  traineePosition?: string;
+}
+
 export interface TrainingRecord {
   id: string;
   userId: string;
@@ -247,6 +260,7 @@ export interface TrainingRecord {
   supervisorFeedback?: string;
   additionalNotes?: string;
   verified: boolean;
+  signature?: SupervisorSignature; // Digital signature — record becomes immutable once signed
   createdAt: string;
   updatedAt: string;
 }

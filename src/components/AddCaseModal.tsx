@@ -30,6 +30,7 @@ import {
   SAMPLE_GENERAL_SURGERY_CLINICAL_CASE,
 } from '../lib/medicalDefaults';
 import { StandardSelectWithOther } from './StandardSelectWithOther';
+import { AiCaseSuggestions } from './AiCaseSuggestions';
 import { compressImageFileToDataUrl, estimateJsonByteSize } from '../lib/imageUtils';
 
 interface AddCaseModalProps {
@@ -969,6 +970,16 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
                   className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:outline-none text-xs"
                 />
               </div>
+
+              {/* AI Case Suggestions — Gemini evidence engine linked to PubMed */}
+              <AiCaseSuggestions
+                diagnosis={primaryDiagnosis}
+                patientAge={patientAge}
+                patientSex={patientSex}
+                specialty={specialty}
+                language={language}
+                onApplyIcd={(code) => setIcd10Code(code)}
+              />
             </div>
           )}
 
