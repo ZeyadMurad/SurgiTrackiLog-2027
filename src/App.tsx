@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   LayoutDashboard,
   FolderPlus,
@@ -46,27 +46,72 @@ import { DataProvider, useData } from './context/DataContext';
 import { SurgiTrackLogo } from './components/SurgiTrackLogo';
 import { matchDoctorCase } from './lib/doctorUtils';
 import { AuthView } from './components/AuthView';
-import { AiAssistantModal } from './components/AiAssistantModal';
 import { TrainingCharts } from './components/TrainingCharts';
-import { ClinicalCasesView } from './components/ClinicalCasesView';
-import { SupervisorView } from './components/SupervisorView';
-import { TrainingSessionsView } from './components/TrainingSessionsView';
-import { SkillsMatrixView } from './components/SkillsMatrixView';
-import { RecommendationGenerator } from './components/RecommendationGenerator';
-import { GermanPortfolioView } from './components/GermanPortfolioView';
 import { SurgicalNewsView } from './components/SurgicalNewsView';
-import { PubMedSearchEngineView } from './components/PubMedSearchEngineView';
-import { MedicalJournalsView } from './components/MedicalJournalsView';
-import { AccreditationView } from './components/AccreditationView';
-import { LearningCurveView } from './components/LearningCurveView';
-import { BackupRestoreView } from './components/BackupRestoreView';
-import { UserProfileView } from './components/UserProfileView';
-import { AdminPanelView } from './components/AdminPanelView';
-import { AddCaseModal } from './components/AddCaseModal';
-import { SurgicalCommunityView, FocusedCommunityTarget } from './components/SurgicalCommunityView';
-import { TraineePortfolioExportModal } from './components/TraineePortfolioExportModal';
-import { YourPostsModal } from './components/YourPostsModal';
 import { GlobalAcademicFooter } from './components/GlobalAcademicFooter';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import type { FocusedCommunityTarget } from './components/SurgicalCommunityView';
+
+// Code-splitting: heavy views and modals load on demand via React.lazy so the
+// initial bundle stays small. The default landing view (SurgicalNewsView) stays
+// eager for fast first paint. Each lazy subtree is wrapped in <ErrorBoundary> +
+// <Suspense> so a load failure or render crash degrades gracefully.
+const ClinicalCasesView = lazy(() =>
+  import('./components/ClinicalCasesView').then(m => ({ default: m.ClinicalCasesView }))
+);
+const SupervisorView = lazy(() =>
+  import('./components/SupervisorView').then(m => ({ default: m.SupervisorView }))
+);
+const TrainingSessionsView = lazy(() =>
+  import('./components/TrainingSessionsView').then(m => ({ default: m.TrainingSessionsView }))
+);
+const SkillsMatrixView = lazy(() =>
+  import('./components/SkillsMatrixView').then(m => ({ default: m.SkillsMatrixView }))
+);
+const RecommendationGenerator = lazy(() =>
+  import('./components/RecommendationGenerator').then(m => ({ default: m.RecommendationGenerator }))
+);
+const GermanPortfolioView = lazy(() =>
+  import('./components/GermanPortfolioView').then(m => ({ default: m.GermanPortfolioView }))
+);
+const PubMedSearchEngineView = lazy(() =>
+  import('./components/PubMedSearchEngineView').then(m => ({ default: m.PubMedSearchEngineView }))
+);
+const MedicalJournalsView = lazy(() =>
+  import('./components/MedicalJournalsView').then(m => ({ default: m.MedicalJournalsView }))
+);
+const AccreditationView = lazy(() =>
+  import('./components/AccreditationView').then(m => ({ default: m.AccreditationView }))
+);
+const LearningCurveView = lazy(() =>
+  import('./components/LearningCurveView').then(m => ({ default: m.LearningCurveView }))
+);
+const BackupRestoreView = lazy(() =>
+  import('./components/BackupRestoreView').then(m => ({ default: m.BackupRestoreView }))
+);
+const UserProfileView = lazy(() =>
+  import('./components/UserProfileView').then(m => ({ default: m.UserProfileView }))
+);
+const AdminPanelView = lazy(() =>
+  import('./components/AdminPanelView').then(m => ({ default: m.AdminPanelView }))
+);
+const SurgicalCommunityView = lazy(() =>
+  import('./components/SurgicalCommunityView').then(m => ({ default: m.SurgicalCommunityView }))
+);
+const AddCaseModal = lazy(() =>
+  import('./components/AddCaseModal').then(m => ({ default: m.AddCaseModal }))
+);
+const AiAssistantModal = lazy(() =>
+  import('./components/AiAssistantModal').then(m => ({ default: m.AiAssistantModal }))
+);
+const TraineePortfolioExportModal = lazy(() =>
+  import('./components/TraineePortfolioExportModal').then(m => ({
+    default: m.TraineePortfolioExportModal,
+  }))
+);
+const YourPostsModal = lazy(() =>
+  import('./components/YourPostsModal').then(m => ({ default: m.YourPostsModal }))
+);
 import { translations } from './lib/i18n';
 import {
   getCasePublishTimestampMs,
@@ -914,6 +959,14 @@ function SurgiTrackApp() {
             </div>
           )}
 
+          <ErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="flex justify-center items-center py-20">
+                  <div className="animate-spin h-8 w-8 rounded-full border-2 border-teal-500 border-t-transparent" />
+                </div>
+              }
+            >
           {/* Default Landing View: Surgical Literature & News */}
           {activeView === 'news' && <SurgicalNewsView />}
 
@@ -1126,6 +1179,8 @@ function SurgiTrackApp() {
             />
           )}
           {activeView === 'admin' && <AdminPanelView />}
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 
@@ -1515,6 +1570,7 @@ function SurgiTrackApp() {
         </div>
       )}
 
+      <Suspense fallback={null}>
       {/* AI Assistant Modal */}
       <AiAssistantModal
         isOpen={aiAssistantOpen}
@@ -1550,6 +1606,7 @@ function SurgiTrackApp() {
           }}
         />
       )}
+      </Suspense>
     </div>
   );
 }

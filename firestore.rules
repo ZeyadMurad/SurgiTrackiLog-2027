@@ -51,10 +51,18 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
+      // Backward-compatible: the original verified admin email still grants
+      // super-admin access, AND any uid listed in the super_admins collection.
+      // This removes the single-email lock-in and supports admin transitions.
+      // The email-admin bootstraps the registry by writing their own uid to
+      // super_admins/{uid} (the email check authorizes that initial write).
       return isSignedIn()
         && request.auth.token.email_verified == true
-        && request.auth.token.email is string
-        && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com';
+        && (
+          (request.auth.token.email is string
+            && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com')
+          || exists(/databases/$(database)/documents/super_admins/$(request.auth.uid))
+        );
     }
 
     function isCommunityCaseOwner(caseData) {
@@ -461,6 +469,15 @@ service cloud.firestore {
 
     match /system/settings {
       allow get: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Super-admin role registry (uid-based). Only existing super admins can read
+    // or modify it; the email-based isSuperAdmin() fallback bootstraps the first
+    // entry (see isSuperAdmin above). Super admins are trusted to manage the
+    // registry (add/remove other admins).
+    match /super_admins/{uid} {
+      allow read: if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 

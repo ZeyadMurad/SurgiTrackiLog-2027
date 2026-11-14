@@ -203,6 +203,14 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
     setFormError('');
   }, [existingCase, isOpen]);
 
+  // Hook declared BEFORE the early return so it runs unconditionally on every
+  // render (React hooks must be called in the same order every render).
+  const [attachmentToDelete, setAttachmentToDelete] = useState<{
+    index: number;
+    id?: string;
+    title: string;
+  } | null>(null);
+
   if (!isOpen) return null;
 
   // Load Model Exemplary Case
@@ -324,8 +332,6 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
       setPendingUploadFile(null);
     }
   };
-
-  const [attachmentToDelete, setAttachmentToDelete] = useState<{ index: number; id?: string; title: string } | null>(null);
 
   const handleDeleteAttachment = (indexToDelete: number, attId?: string) => {
     const targetAtt = attachments[indexToDelete];

@@ -1,0 +1,47 @@
+# Local multi-service development for SurgiTrack iLog.
+#
+#   docker compose up           # app + redis
+#   docker compose up app       # app only (in-memory rate limiting)
+#   docker compose down         # stop and remove containers
+#
+# Copy .env.example to .env and fill in real values before running:
+#   cp .env.example .env
+#
+# NOTE on distributed rate limiting: src/lib/rateLimiter.ts speaks the Upstash
+# Redis *REST* API (HTTPS), not the native RESP protocol. A plain `redis`
+# container therefore cannot serve as the rate-limit backend directly. To test
+# distributed rate limiting locally, use a hosted Upstash database and set
+# UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN in .env. The `redis` service
+# below is included for future direct-Redis features (caching, sessions) and
+# local experimentation.
+
+services:
+  app:
+    build: .
+    image: surgitrack-ilog:dev
+    container_name: surgitrack-app
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      # No reverse proxy in front of the compose stack.
+      - TRUSTED_PROXY_HOPS=0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: surgitrack-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: ['redis-server', '--appendonly', 'yes']
+    restart: unless-stopped
+
+volumes:
+  redis-data:
