@@ -31,6 +31,7 @@ import {
   safeSetLocalStorage,
   saveCompactCommunityCache,
 } from '../lib/firebase';
+import { OFFLINE_QUEUE_KEY, dedupeAndEnqueue, type OfflineQueueItem } from '../lib/offlineQueue';
 import { useAuth } from './AuthContext';
 import {
   ClinicalCase,
@@ -165,18 +166,9 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-// Local storage persistent fallback keys
+// Local storage persistent fallback prefix (per-user keys: STORAGE_PREFIX + uid + '_' + key).
+// OFFLINE_QUEUE_KEY and the OfflineQueueItem type live in ../lib/offlineQueue (Phase 1 extraction).
 const STORAGE_PREFIX = 'surgitrack_local_';
-const OFFLINE_QUEUE_KEY = 'surgitrack_offline_queue_';
-
-interface OfflineQueueItem {
-  id: string;
-  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill';
-  action: 'create' | 'update' | 'delete';
-  data?: any;
-  parentId?: string;
-  timestamp: string;
-}
 
 const MAX_FIRESTORE_DOC_BYTES = 920_000;
 
@@ -241,10 +233,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const enqueueOfflineAction = (item: OfflineQueueItem) => {
     const queue = getOfflineQueue();
-    // Filter existing duplicate pending item for the same entity id if needed
-    const filtered = queue.filter(q => !(q.id === item.id && q.action === item.action));
-    const updated = [...filtered, item];
-    saveOfflineQueue(updated);
+    // Pure dedup+enqueue lives in ../lib/offlineQueue (testable, state-free).
+    saveOfflineQueue(dedupeAndEnqueue(queue, item));
   };
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => {
