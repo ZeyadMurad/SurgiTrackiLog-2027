@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@layer base {
+  body {
+    font-family: "Plus Jakarta Sans", "DM Sans", system-ui, -apple-system, sans-serif;
+  }
+  code, pre, .font-mono {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -24,11 +37,11 @@
 
 .animate-fadeIn,
 .animate-fade-in {
-  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .animate-scaleUp {
-  animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

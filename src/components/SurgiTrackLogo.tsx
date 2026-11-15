@@ -20,7 +20,7 @@ export const SurgiTrackLogo: React.FC<LogoProps> = ({
         style={{ width: size, height: size }}
       >
         <img
-          src="/assets/aistudio/file_0000000013d082119f6968e72ed788bc_e6453226.png"
+          src="/icon-512.png"
           alt="SurgiTrack iLog Official Icon"
           className="w-full h-full object-cover"
         />

@@ -277,7 +277,7 @@ export const PubMedSearchEngineView: React.FC = () => {
               <span>NCBI PubMed Official Full Archive</span>
             </span>
             <span className="inline-flex items-center gap-1.5 text-[10px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              
               <span>{isRTL ? 'تغطية شاملة لكافة الأعوام والأنواع' : 'All Years & Study Types Covered'}</span>
             </span>
             {lastSyncTime && (

@@ -334,13 +334,16 @@ export const AuthView: React.FC<AuthViewProps> = ({
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-[#0c1424] via-[#101C32] to-[#0f1f33] text-slate-100 flex flex-col justify-between p-4 sm:p-6 ${isRTL ? 'rtl' : 'ltr'}`}>
+    <div className={`relative min-h-screen overflow-hidden bg-[#060E1F] text-slate-100 flex flex-col justify-between p-4 sm:p-6 ${isRTL ? 'rtl' : 'ltr'}`}>
+      <img src="/icon-512.png" alt="" aria-hidden="true" className="pointer-events-none select-none fixed inset-0 w-full h-full object-cover opacity-[0.12] blur-2xl scale-110" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,rgba(13,148,136,0.16),rgba(6,14,31,0.92)_65%)]" />
+      <div className="relative z-10 flex flex-col justify-between flex-1">
       {/* Top Header with LTR Logo & Language Toggle */}
       <div className="max-w-6xl w-full mx-auto flex items-center justify-between py-2">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl overflow-hidden shadow-lg border border-teal-500/40 bg-[#101C32] shrink-0">
             <img
-              src="/assets/aistudio/file_0000000013d082119f6968e72ed788bc_e6453226.png"
+              src="/icon-512.png"
               alt="SurgiTrack"
               className="w-full h-full object-cover"
             />
@@ -396,7 +399,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-md border border-teal-400/40 bg-slate-900 shrink-0">
                 <img
-                  src="/assets/aistudio/file_0000000013d082119f6968e72ed788bc_e6453226.png"
+                  src="/icon-512.png"
                   alt="SurgiTrack"
                   className="w-full h-full object-cover"
                 />
@@ -954,6 +957,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           SurgiTrack – Professional Surgical Training, Clinical Logbook & Medical Portfolio Platform © 2026.
         </p>
       </div>
+    </div>
     </div>
   );
 };

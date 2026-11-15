@@ -9,6 +9,7 @@ import {
   Sparkles,
   ChevronDown,
   Loader2,
+  MessagesSquare,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -30,12 +31,26 @@ export interface FocusedCommunityTarget {
 interface SurgicalCommunityViewProps {
   focusedCaseTarget?: FocusedCommunityTarget | null;
   onClearFocusedCase?: () => void;
+  communityTab?: 'cases' | 'threads';
+  onChangeCommunityTab?: (tab: 'cases' | 'threads') => void;
+  threadsCount?: number;
+  threadsSlot?: React.ReactNode;
 }
 
 export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
   focusedCaseTarget,
   onClearFocusedCase,
+  communityTab: controlledTab,
+  onChangeCommunityTab,
+  threadsCount = 0,
+  threadsSlot,
 }) => {
+  const [internalTab, setInternalTab] = useState<'cases' | 'threads'>('cases');
+  const activeCommunityTab = controlledTab ?? internalTab;
+  const setActiveCommunityTab = (tab: 'cases' | 'threads') => {
+    setInternalTab(tab);
+    onChangeCommunityTab?.(tab);
+  };
   const {
     communityCases,
     allDoctors,
@@ -68,6 +83,7 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
     if (!targetId) return;
     let cancelled = false;
 
+    setActiveCommunityTab('cases');
     setFeedTab('all');
     setSearch('');
     setSelectedSpecialty('All');
@@ -185,38 +201,96 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
+      {/* Community Unified Hub Switcher (Clinical Cases + Surgical Threads) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setActiveCommunityTab('cases')}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+              activeCommunityTab === 'cases'
+                ? 'bg-[#101C32] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users size={15} className={activeCommunityTab === 'cases' ? 'text-teal-400' : 'text-slate-500'} />
+            <span>{isRTL ? 'الحالات السريرية' : language === 'de' ? 'Klinische Fälle' : 'Clinical Cases'}</span>
+            <span className={`text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded ${activeCommunityTab === 'cases' ? 'bg-white/15 text-teal-200' : 'bg-slate-200 text-slate-700'}`}>
+              {communityCases.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveCommunityTab('threads')}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+              activeCommunityTab === 'threads'
+                ? 'bg-[#101C32] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <MessagesSquare size={15} className={activeCommunityTab === 'threads' ? 'text-teal-400' : 'text-slate-500'} />
+            <span>{isRTL ? 'المناقشات الجراحية (Threads)' : language === 'de' ? 'Diskussionen (Threads)' : 'Surgical Threads'}</span>
+            <span className={`text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded ${activeCommunityTab === 'threads' ? 'bg-white/15 text-teal-200' : 'bg-slate-200 text-slate-700'}`}>
+              {threadsCount}
+            </span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEditingCase(null);
+            setShowAddModal(true);
+          }}
+          className="bg-[#0D9488] hover:bg-teal-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+        >
+          <Plus size={15} />
+          <span>{isRTL ? 'نشر حالة سريرية' : 'Publish Case'}</span>
+        </button>
+      </div>
+
+      {activeCommunityTab === 'threads' && threadsSlot ? (
+        <div className="animate-fadeIn">{threadsSlot}</div>
+      ) : (
+        <>
       {/* Community Header Banner */}
-      <div className="bg-gradient-to-r from-[#101C32] via-[#0E4646] to-[#0D9488] rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden shadow-lg shadow-teal-950/10">
+      <div className="bg-gradient-to-r from-[#101C32] via-[#0E4646] to-[#0D9488] rounded-2xl p-6 text-white relative overflow-hidden">
         <div className="relative z-10 max-w-2xl space-y-2">
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-teal-200 text-xs font-semibold border border-white/10">
+          <div className="flex items-center gap-2 text-teal-200 text-xs font-semibold">
             <Users size={14} />
-            <span>{isRTL ? 'المجتمع الجراحي الطبي التفاعلي' : 'Peer Surgical Community & Colleague Network'}</span>
+            <span>{isRTL ? 'المجتمع الجراحي التفاعلي' : 'Peer Surgical Community & Network'}</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {isRTL ? 'شبكة الأطباء والجراحين وتبادل الحالات' : 'Connect, Follow Colleagues & Share Clinical Cases'}
+            {isRTL ? 'شبكة الجراحين وتبادل الحالات والمناقشات' : 'Connect, Share Clinical Cases & Discuss in Threads'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
             {isRTL
-              ? 'تفاعل مع أقرانك من الجراحين، تابع زملاءك، وانشر الحالات السريرية المعقدة بنموذج علمي محكم.'
-              : 'Follow peer surgeons, review certified case records, discuss operative strategies, and exchange clinical expertise.'}
+              ? 'تفاعل مع أقرانك من الجراحين، تابع زملاءك، ناقش الاستراتيجيات الجراحية في المناقشات، وانشر الحالات السريرية.'
+              : 'Follow peer surgeons, review certified case records, and join focused clinical discussions in Threads.'}
           </p>
-
-          <div className="pt-3 flex items-center gap-3">
+          <div className="pt-2 flex flex-wrap items-center gap-2.5">
             <button
+              type="button"
               onClick={() => {
                 setEditingCase(null);
                 setShowAddModal(true);
               }}
-              className="bg-white hover:bg-teal-50 text-teal-900 font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              className="bg-white hover:bg-teal-50 text-teal-900 font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Plus size={16} />
-              <span>{isRTL ? 'نشر حالة سريرية في المجتمع' : 'Publish Surgical Case to Community'}</span>
+              <Plus size={15} />
+              <span>{isRTL ? 'نشر حالة سريرية في المجتمع' : 'Publish Surgical Case'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveCommunityTab('threads')}
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/25 font-bold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <MessagesSquare size={15} />
+              <span>{isRTL ? 'فتح المناقشات الجراحية' : 'Open Surgical Threads'}</span>
             </button>
           </div>
         </div>
-
-        {/* Ambient subtle decorative circle */}
-        <div className="absolute right-0 top-0 w-80 h-80 bg-teal-400/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {/* 1. Circular Surgeons Avatars Carousel */}
@@ -369,6 +443,9 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
           </div>
         )}
       </div>
+
+        </>
+      )}
 
       {/* Doctor Profile Modal */}
       <DoctorProfileModal

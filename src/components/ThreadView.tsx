@@ -110,6 +110,7 @@ export interface ThreadViewProps {
   onMarkSolution: (threadId: string, replyId: string) => Promise<void>;
   onUpdateStatus: (status: ThreadStatus) => Promise<void>;
   onToggleReplyLike?: (replyId: string) => Promise<void>;
+  onOpenCase?: (caseId: string) => void;
 }
 
 export const ThreadView: React.FC<ThreadViewProps> = ({
@@ -129,6 +130,7 @@ export const ThreadView: React.FC<ThreadViewProps> = ({
   onMarkSolution,
   onUpdateStatus,
   onToggleReplyLike,
+  onOpenCase,
 }) => {
   const t = I18N[language];
   const isRtl = language === 'ar';
@@ -327,6 +329,15 @@ export const ThreadView: React.FC<ThreadViewProps> = ({
             >
               <AlertCircle size={14} />
               {t.linkedCase}: {thread.linkedCaseReference} — {thread.linkedCaseTitle}
+              {onOpenCase && thread.linkedCaseId && (
+                <button
+                  type="button"
+                  onClick={() => onOpenCase(thread.linkedCaseId!)}
+                  style={{ marginInlineStart: 'auto', background: '#1d4ed8', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.25rem 0.625rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {language === 'ar' ? 'عرض الحالة' : 'Open Case'}
+                </button>
+              )}
             </div>
           )}
 

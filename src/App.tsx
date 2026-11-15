@@ -160,6 +160,9 @@ function SurgiTrackApp() {
 
   // DEFAULT VIEW: Surgical Literature & News (as requested by user)
   const [activeView, setActiveView] = useState<ActiveView>('news');
+  const [literatureTab, setLiteratureTab] = useState<'stream' | 'journals' | 'pubmed'>('stream');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'learning' | 'visual_library' | 'simulation_lab'>('overview');
+  const [communityTab, setCommunityTab] = useState<'cases' | 'threads'>('cases');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [showQuickCaseModal, setShowQuickCaseModal] = useState(false);
@@ -231,18 +234,32 @@ function SurgiTrackApp() {
     );
   }
 
-  // If still checking auth status
+  // If still checking auth status — display official emblem background & splash
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#101C32] flex flex-col items-center justify-center text-white">
-        <div className="w-16 h-16 rounded-3xl overflow-hidden shadow-2xl border border-teal-500/40 mb-4">
-          <img
-            src="/assets/aistudio/file_0000000013d082119f6968e72ed788bc_e6453226.png"
-            alt="SurgiTrack"
-            className="w-full h-full object-cover"
-          />
+      <div className="relative min-h-screen bg-[#060E1F] flex flex-col items-center justify-center text-white overflow-hidden">
+        <img
+          src="/icon-512.png"
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none select-none absolute inset-0 w-full h-full object-cover opacity-20 blur-2xl scale-110"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(13,148,136,0.22),rgba(6,14,31,0.9)_65%)]" />
+        <div className="relative z-10 flex flex-col items-center text-center px-6">
+          <div className="w-24 h-24 rounded-3xl overflow-hidden shadow-2xl border border-teal-400/50 mb-4 bg-[#0B1730]">
+            <img
+              src="/icon-512.png"
+              alt="SurgiTrack iLog"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <p className="text-base font-extrabold tracking-tight text-white">
+            SurgiTrack <span className="text-teal-400">iLog</span>
+          </p>
+          <p className="text-xs font-medium text-teal-300/90 mt-1">
+            {isRTL ? 'جارٍ تحميل المنصة الجراحية...' : 'Loading Surgical Training Platform...'}
+          </p>
         </div>
-        <p className="text-sm font-semibold text-teal-300">Loading SurgiTrack Platform...</p>
       </div>
     );
   }
@@ -330,37 +347,141 @@ function SurgiTrackApp() {
     setMobileMenuOpen(false);
   };
 
-  // Primary Navigation Redesign:
-  // 1. Surgical Literature & News, 2. Surgical Community, 3. PubMed Research, 4. Dashboard, 5. Clinical Cases, 6. Logbook Entries (Supervisor Portfolios), 7. Recommendations & Zeugnis, 8. German WBO, 9. Backup & Restore, 10. Profile, 11. Admin (Super Admin only)
-  const navItems = [
-    { id: 'news', label: t.news, icon: Newspaper },
-    { id: 'community', label: isRTL ? 'المجتمع الجراحي' : 'Surgical Community', icon: Users, count: communityCases?.length, newCount: newCommunityCount },
-    { id: 'pubmed', label: t.pubmed, icon: BookOpen },
-    { id: 'dashboard', label: t.dashboard, icon: LayoutDashboard },
+  // Unified Hub Navigation Helper: keeps Learning Curve, Visual Library, Simulation Lab inside Dashboard;
+  // Medical Journals & PubMed inside Literature; and Threads inside Community.
+  const navigateTo = (target: ActiveView) => {
+    if (target === 'learning' || target === 'visual_library' || target === 'simulation_lab') {
+      setDashboardTab(target);
+      setActiveView('dashboard');
+    } else if (target === 'journals') {
+      setLiteratureTab('journals');
+      setActiveView('news');
+    } else if (target === 'pubmed') {
+      setLiteratureTab('pubmed');
+      setActiveView('news');
+    } else if (target === 'community_threads') {
+      setCommunityTab('threads');
+      setActiveView('community');
+    } else {
+      setActiveView(target);
+    }
+    setMobileMenuOpen(false);
+  };
+
+  // Streamlined Sidebar Navigation reflecting the 3 Cohesive Hubs + Portfolio Modules
+  const navItems: {
+    id: ActiveView;
+    label: string;
+    icon: any;
+    count?: number;
+    newCount?: number;
+    subLinks?: { id: string; label: string; icon: any; isActive: boolean; onClick: () => void }[];
+  }[] = [
+    {
+      id: 'news',
+      label: isRTL ? 'الأدبيات والأبحاث' : language === 'de' ? 'Fachliteratur & Forschung' : 'Literature & Journals',
+      icon: BookOpen,
+      subLinks: [
+        {
+          id: 'stream',
+          label: isRTL ? 'أحدث الدراسات المتجددة' : 'Latest Studies (Live)',
+          icon: Newspaper,
+          isActive: activeView === 'news' && literatureTab === 'stream',
+          onClick: () => { setLiteratureTab('stream'); setActiveView('news'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'journals',
+          label: isRTL ? 'محرك المجلات الطبية' : 'Medical Journals',
+          icon: LibraryBig,
+          isActive: activeView === 'news' && literatureTab === 'journals',
+          onClick: () => { setLiteratureTab('journals'); setActiveView('news'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'pubmed',
+          label: 'PubMed Archive',
+          icon: BookOpen,
+          isActive: activeView === 'news' && literatureTab === 'pubmed',
+          onClick: () => { setLiteratureTab('pubmed'); setActiveView('news'); setMobileMenuOpen(false); },
+        },
+      ],
+    },
+    {
+      id: 'community',
+      label: isRTL ? 'المجتمع والمناقشات' : language === 'de' ? 'Chirurgische Community' : 'Surgical Community',
+      icon: Users,
+      count: (communityCases?.length || 0) + threads.length,
+      newCount: newCommunityCount,
+      subLinks: [
+        {
+          id: 'cases',
+          label: isRTL ? 'الحالات السريرية' : 'Clinical Cases',
+          icon: Users,
+          isActive: activeView === 'community' && communityTab === 'cases',
+          onClick: () => { setCommunityTab('cases'); openCommunityView(); },
+        },
+        {
+          id: 'threads',
+          label: isRTL ? 'المناقشات (Threads)' : 'Surgical Threads',
+          icon: MessagesSquare,
+          isActive: activeView === 'community' && communityTab === 'threads',
+          onClick: () => { setCommunityTab('threads'); setActiveView('community'); setMobileMenuOpen(false); },
+        },
+      ],
+    },
+    {
+      id: 'dashboard',
+      label: t.dashboard,
+      icon: LayoutDashboard,
+      subLinks: [
+        {
+          id: 'overview',
+          label: isRTL ? 'نظرة عامة' : 'Overview',
+          icon: LayoutDashboard,
+          isActive: activeView === 'dashboard' && dashboardTab === 'overview',
+          onClick: () => { setDashboardTab('overview'); setActiveView('dashboard'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'learning',
+          label: isRTL ? 'منحنى التعلم' : 'Learning Curve',
+          icon: TrendingUp,
+          isActive: activeView === 'dashboard' && dashboardTab === 'learning',
+          onClick: () => { setDashboardTab('learning'); setActiveView('dashboard'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'visual_library',
+          label: isRTL ? 'المكتبة المرئية' : 'Visual Library',
+          icon: Images,
+          isActive: activeView === 'dashboard' && dashboardTab === 'visual_library',
+          onClick: () => { setDashboardTab('visual_library'); setActiveView('dashboard'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'simulation_lab',
+          label: isRTL ? 'مختبر المحاكاة' : 'Simulation Lab',
+          icon: FlaskConical,
+          isActive: activeView === 'dashboard' && dashboardTab === 'simulation_lab',
+          onClick: () => { setDashboardTab('simulation_lab'); setActiveView('dashboard'); setMobileMenuOpen(false); },
+        },
+      ],
+    },
     { id: 'cases', label: t.cases, icon: FolderPlus, count: cases.length },
     { id: 'supervisors', label: t.logbookEntries || (isRTL ? 'سجل العمليات والمهارات' : 'Logbook Entries'), icon: UserCheck, count: supervisors.length },
-    { id: 'learning', label: isRTL ? 'منحنى التعلم' : 'Learning Curve', icon: TrendingUp },
-    { id: 'accreditation', label: isRTL ? 'الاعتماد الدولي' : 'Accreditation', icon: Globe2 },
-    { id: 'journals', label: isRTL ? 'محرك المجلات الطبية' : 'Medical Journals', icon: LibraryBig },
-    { id: 'recommendations', label: t.recommendations, icon: Sparkles },
-    { id: 'community_threads', label: language === 'ar' ? 'المناقشات الجراحية' : language === 'de' ? 'Diskussionen' : 'Threads', icon: MessagesSquare, count: threads.length },
-    { id: 'visual_library', label: language === 'ar' ? 'المكتبة المرئية' : language === 'de' ? 'Mediathek' : 'Visual Library', icon: Images },
-    { id: 'simulation_lab', label: language === 'ar' ? 'مختبر المحاكاة' : language === 'de' ? 'Simulationslabor' : 'Simulation Lab', icon: FlaskConical, count: simulationSessions.length },
     { id: 'cv_builder', label: language === 'ar' ? 'مُولّد السيرة الذاتية' : language === 'de' ? 'CV-Generator' : 'CV Builder', icon: FileText },
+    { id: 'accreditation', label: isRTL ? 'الاعتماد الدولي' : 'Accreditation', icon: Globe2 },
+    { id: 'recommendations', label: t.recommendations, icon: Sparkles },
     { id: 'german', label: t.germanPortfolio, icon: FileCheck2 },
     { id: 'backup', label: t.backup, icon: HardDrive },
     { id: 'profile', label: t.profile, icon: User },
-    ...(isSuperAdmin ? [{ id: 'admin', label: isRTL ? 'لوحة المدير العام' : 'Super Admin', icon: ShieldAlert }] : []),
+    ...(isSuperAdmin ? [{ id: 'admin' as ActiveView, label: isRTL ? 'لوحة المدير العام' : 'Super Admin', icon: ShieldAlert }] : []),
   ];
 
-  // Quick Navigation Items for Bottom Bar (Community, Dashboard, Clinical Cases, Logbook Entries, PubMed, News)
+  // Bottom Quick Navigation Bar: 5 clean thumb-accessible hubs
+  // Community (incl. Threads), Dashboard (incl. Learning Curve, Visual Library, Simulation Lab), Cases, Logbook, Literature (incl. Medical Journals & PubMed)
   const quickNavItems = [
-    { id: 'community' as ActiveView, label: isRTL ? 'المجتمع' : 'Community', icon: Users, count: communityCases?.length, newCount: newCommunityCount },
+    { id: 'community' as ActiveView, label: isRTL ? 'المجتمع' : 'Community', icon: Users, count: (communityCases?.length || 0) + threads.length, newCount: newCommunityCount },
     { id: 'dashboard' as ActiveView, label: t.quickNavDashboard, icon: LayoutDashboard },
     { id: 'cases' as ActiveView, label: t.quickNavCases, icon: FolderPlus, count: cases.length },
     { id: 'supervisors' as ActiveView, label: t.quickNavLogbook || (isRTL ? 'سجل العمليات' : 'Logbook'), icon: UserCheck, count: supervisors.length },
-    { id: 'pubmed' as ActiveView, label: 'PubMed', icon: BookOpen },
-    { id: 'news' as ActiveView, label: t.quickNavNews, icon: Newspaper },
+    { id: 'news' as ActiveView, label: t.quickNavNews, icon: BookOpen },
   ];
 
   return (
@@ -650,43 +771,67 @@ function SurgiTrackApp() {
           <div className="bg-white rounded-3xl border border-slate-200 p-3 shadow-xs space-y-1">
             {navItems.map(item => {
               const Icon = item.icon;
-              const isActive = activeView === item.id;
+              const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
               const isAdminItem = item.id === 'admin';
               return (
-                <button
-                  key={item.id}
-                  onClick={() => item.id === 'community' ? openCommunityView() : setActiveView(item.id as ActiveView)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
-                    isActive
-                      ? isAdminItem
-                        ? 'bg-red-900 text-white shadow-xs'
-                        : 'bg-[#101C32] text-white shadow-xs'
-                      : isAdminItem
-                      ? 'text-red-700 bg-red-50 hover:bg-red-100'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon size={16} className={isActive ? 'text-teal-400' : isAdminItem ? 'text-red-600' : 'text-slate-500'} />
-                    <span>{item.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {'newCount' in item && (item as any).newCount > 0 && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-600 text-white">
-                        {(item as any).newCount} {isRTL ? 'جديد' : 'New'}
-                      </span>
-                    )}
-                    {item.count !== undefined && item.count > 0 && (
-                      <span
-                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                          isActive ? 'bg-teal-500 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {item.count}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => item.id === 'community' ? openCommunityView() : navigateTo(item.id)}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
+                      isActive
+                        ? isAdminItem
+                          ? 'bg-red-900 text-white shadow-xs'
+                          : 'bg-[#101C32] text-white shadow-xs'
+                        : isAdminItem
+                        ? 'text-red-700 bg-red-50 hover:bg-red-100'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon size={16} className={isActive ? 'text-teal-400 shrink-0' : isAdminItem ? 'text-red-600 shrink-0' : 'text-slate-500 shrink-0'} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {item.newCount !== undefined && item.newCount > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-600 text-white tabular-nums">
+                          {item.newCount}
+                        </span>
+                      )}
+                      {item.count !== undefined && item.count > 0 && (
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full tabular-nums ${
+                            isActive ? 'bg-teal-500 text-white' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {isActive && item.subLinks && item.subLinks.length > 0 && (
+                    <div className="ps-4 space-y-0.5 pt-0.5 pb-1">
+                      {item.subLinks.map(sub => {
+                        const SubIcon = sub.icon;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={sub.onClick}
+                            className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition cursor-pointer ${
+                              sub.isActive
+                                ? 'bg-teal-50 text-teal-800 font-bold'
+                                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                            }`}
+                          >
+                            <SubIcon size={13} className={sub.isActive ? 'text-teal-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                            <span className="truncate">{sub.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -782,32 +927,52 @@ function SurgiTrackApp() {
                 <div className="space-y-1">
                   {navItems.map(item => {
                     const Icon = item.icon;
-                    const isActive = activeView === item.id;
+                    const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
                     return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          if (item.id === 'community') {
-                            openCommunityView();
-                          } else {
-                            setActiveView(item.id as ActiveView);
-                            setMobileMenuOpen(false);
-                          }
-                        }}
-                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold ${
-                          isActive ? 'bg-[#0D9488] text-white font-bold' : 'text-slate-300 hover:bg-white/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon size={16} />
-                          <span>{item.label}</span>
-                        </div>
-                        {'newCount' in item && (item as any).newCount > 0 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white">
-                            {(item as any).newCount}
-                          </span>
+                      <div key={item.id} className="space-y-1">
+                        <button
+                          onClick={() => {
+                            if (item.id === 'community') {
+                              openCommunityView();
+                            } else {
+                              navigateTo(item.id);
+                            }
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold ${
+                            isActive ? 'bg-[#0D9488] text-white font-bold' : 'text-slate-300 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Icon size={16} />
+                            <span>{item.label}</span>
+                          </div>
+                          {item.newCount !== undefined && item.newCount > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white tabular-nums">
+                              {item.newCount}
+                            </span>
+                          )}
+                        </button>
+                        {isActive && item.subLinks && (
+                          <div className="ps-4 space-y-0.5 pb-1">
+                            {item.subLinks.map(sub => {
+                              const SubIcon = sub.icon;
+                              return (
+                                <button
+                                  key={sub.id}
+                                  type="button"
+                                  onClick={sub.onClick}
+                                  className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold ${
+                                    sub.isActive ? 'bg-white/15 text-teal-300' : 'text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  <SubIcon size={13} />
+                                  <span>{sub.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -946,31 +1111,218 @@ function SurgiTrackApp() {
             </div>
           )}
 
-          {/* Default Landing View: Surgical Literature & News */}
-          {activeView === 'news' && <SurgicalNewsView />}
+          {/* HUB 1: Unified Surgical Literature & Medical Journals Hub (Auto-Updating Studies + Medical Journals + PubMed) */}
+          {(activeView === 'news' || activeView === 'journals' || activeView === 'pubmed') && (
+            <div className="space-y-5 animate-fadeIn">
+              {/* Literature Hub Segmented Switcher */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setLiteratureTab('stream'); setActiveView('news'); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      literatureTab === 'stream'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Newspaper size={15} className={literatureTab === 'stream' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'أحدث الدراسات المتجددة' : language === 'de' ? 'Aktuelle Studien' : 'Latest Studies'}</span>
+                  </button>
 
-          {/* Peer Surgical Community & Colleague Network */}
-          {activeView === 'community' && (
+                  <button
+                    type="button"
+                    onClick={() => { setLiteratureTab('journals'); setActiveView('news'); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      literatureTab === 'journals'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <LibraryBig size={15} className={literatureTab === 'journals' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'المجلات الطبية' : language === 'de' ? 'Medizinische Journale' : 'Medical Journals'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setLiteratureTab('pubmed'); setActiveView('news'); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      literatureTab === 'pubmed'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <BookOpen size={15} className={literatureTab === 'pubmed' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'بحث PubMed الشامل' : 'PubMed Archive'}</span>
+                  </button>
+                </div>
+
+                <div className="hidden md:flex items-center gap-2 px-3 text-[11px] font-medium text-slate-500">
+                  <span>PubMed</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Europe PMC</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Crossref</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Cochrane</span>
+                </div>
+              </div>
+
+              {literatureTab === 'stream' && <SurgicalNewsView />}
+              {literatureTab === 'journals' && <MedicalJournalsView />}
+              {literatureTab === 'pubmed' && <PubMedSearchEngineView />}
+            </div>
+          )}
+
+          {/* HUB 2: Unified Peer Surgical Community & Discussions (Clinical Cases + Threads) */}
+          {(activeView === 'community' || activeView === 'community_threads') && (
             <SurgicalCommunityView
               focusedCaseTarget={focusedCommunityTarget}
               onClearFocusedCase={() => setFocusedCommunityTarget(null)}
+              communityTab={communityTab}
+              onChangeCommunityTab={setCommunityTab}
+              threadsCount={threads.length}
+              threadsSlot={
+                <CommunityThreadsView
+                  language={language}
+                  currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+                  currentUserName={profile?.fullName || user?.displayName || 'Surgeon'}
+                  currentUserSpecialty={profile?.specialty}
+                  currentUserDegree={profile?.medicalQualification}
+                  currentUserPhotoUrl={profile?.profilePhotoUrl}
+                  currentUserPosition={profile?.currentPosition}
+                  threads={threads}
+                  threadReplies={threadReplies}
+                  publishedCases={cases
+                    .filter(c => c.isPublished)
+                    .map(c => ({
+                      id: c.id,
+                      caseReference: c.caseReference,
+                      primaryDiagnosis: c.primaryDiagnosis,
+                    }))}
+                  onCreateThread={createThread}
+                  onToggleLike={toggleThreadLike}
+                  onToggleFollow={toggleThreadFollow}
+                  onIncrementView={incrementThreadView}
+                  onFetchReplies={fetchThreadReplies}
+                  onAddReply={addThreadReply}
+                  onToggleReplyLike={toggleReplyLike}
+                  onMarkSolution={markThreadSolution}
+                  onUpdateThreadStatus={updateThreadStatus}
+                  onOpenCase={(caseId: string) => {
+                    setCommunityTab('cases');
+                    openCommunityView(caseId, false);
+                  }}
+                />
+              }
             />
           )}
 
-          {/* PubMed Evidence & Research Engine */}
-          {activeView === 'pubmed' && <PubMedSearchEngineView />}
+          {/* HUB 3: Unified Surgical Dashboard (Overview + Learning Curve + Visual Library + Simulation Lab) */}
+          {(activeView === 'dashboard' || activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab') && (
+            <div className="space-y-5 animate-fadeIn">
+              {/* Dashboard Hub Workspace Bar */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full lg:w-auto overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setDashboardTab('overview'); setActiveView('dashboard'); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      dashboardTab === 'overview'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <LayoutDashboard size={15} className={dashboardTab === 'overview' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'نظرة عامة' : language === 'de' ? 'Übersicht' : 'Overview'}</span>
+                  </button>
 
-          {/* 2nd View: My Surgical Dashboard */}
-          {activeView === 'dashboard' && (
+                  <button
+                    type="button"
+                    onClick={() => { setDashboardTab('learning'); setActiveView('dashboard'); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      dashboardTab === 'learning'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <TrendingUp size={15} className={dashboardTab === 'learning' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'منحنى التعلم' : language === 'de' ? 'Lernkurve' : 'Learning Curve'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setDashboardTab('visual_library'); setActiveView('dashboard'); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      dashboardTab === 'visual_library'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Images size={15} className={dashboardTab === 'visual_library' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'المكتبة المرئية' : language === 'de' ? 'Mediathek' : 'Visual Library'}</span>
+                    {savedVisualMediaIds.length > 0 && (
+                      <span className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded ${dashboardTab === 'visual_library' ? 'bg-white/15 text-teal-200' : 'bg-slate-200 text-slate-700'}`}>
+                        {savedVisualMediaIds.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setDashboardTab('simulation_lab'); setActiveView('dashboard'); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      dashboardTab === 'simulation_lab'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FlaskConical size={15} className={dashboardTab === 'simulation_lab' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'مختبر المحاكاة' : language === 'de' ? 'Simulationslabor' : 'Simulation Lab'}</span>
+                    {simulationSessions.length > 0 && (
+                      <span className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded ${dashboardTab === 'simulation_lab' ? 'bg-white/15 text-teal-200' : 'bg-slate-200 text-slate-700'}`}>
+                        {simulationSessions.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                <div className="hidden xl:flex items-center gap-2 px-3 text-[11px] font-medium text-slate-500">
+                  <span>{isRTL ? 'مركز التعلم والتحليل الجراحي' : 'Surgical Mastery & Analytics Hub'}</span>
+                </div>
+              </div>
+
+              {dashboardTab === 'learning' && <LearningCurveView />}
+              {dashboardTab === 'visual_library' && (
+                <VisualLibraryView
+                  language={language}
+                  currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+                  savedMediaIds={savedVisualMediaIds}
+                  onSaveMedia={toggleSaveVisualMedia}
+                  onOpenThreadForMedia={() => {
+                    setCommunityTab('threads');
+                    setActiveView('community');
+                  }}
+                />
+              )}
+              {dashboardTab === 'simulation_lab' && (
+                <SimulationLabView
+                  language={language}
+                  currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+                  traineeId={profile?.userId || user?.uid}
+                  simulationSessions={simulationSessions}
+                  onLogSession={logSimulationSession}
+                />
+              )}
+
+              {dashboardTab === 'overview' && (
             <div className="space-y-6">
               {/* Dashboard Greeting Banner */}
-              <div className="bg-[#101C32] rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 border border-teal-500/30">
+              <div className="bg-[#101C32] rounded-2xl p-6 sm:p-7 text-white border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/80 px-2.5 py-1 rounded-md border border-teal-500/40">
-                      SurgiTrack Professional Dashboard
-                    </span>
-                  </div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-teal-300 block mb-1.5">
+                    SurgiTrack iLog · Executive Portfolio Dashboard
+                  </span>
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
                     {profile?.fullName || t.doctor}, {t.welcomeToSurgicalPortfolio}
                   </h1>
@@ -979,27 +1331,99 @@ function SurgiTrackApp() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
                   <button
                     onClick={() => setShowQuickCaseModal(true)}
-                    className="flex items-center gap-1.5 bg-[#0D9488] hover:bg-teal-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-xs cursor-pointer"
+                    className="flex items-center gap-1.5 bg-[#0D9488] hover:bg-teal-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer whitespace-nowrap"
                   >
-                    <Plus size={15} /> + {t.addNewCase}
+                    <Plus size={15} /> {t.addNewCase}
                   </button>
                   <button
                     onClick={() => setActiveView('supervisors')}
-                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap"
                   >
                     <UserCheck size={15} /> {t.supervisors}
                   </button>
                 </div>
               </div>
 
-              {/* 11 Calculated Real Metrics Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+              {/* Integrated Learning & Simulation Modules inside Dashboard */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab('learning')}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-teal-500 p-5 text-start transition group cursor-pointer flex flex-col justify-between gap-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 group-hover:bg-[#0D9488] group-hover:text-white transition-colors">
+                      <TrendingUp size={21} />
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
+                      {stats.totalProcedures} {isRTL ? 'إجراء' : 'ops'}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-800 transition-colors">
+                      {isRTL ? 'منحنى التعلم الجراحي' : language === 'de' ? 'Chirurgische Lernkurve' : 'Learning Curve Analytics'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {isRTL ? 'تحليل تطور الاستقلالية الجراحية ومؤشر الكفاءة مقارنة بالأهداف.' : 'Track procedural autonomy, rolling competency curves & target benchmarks.'}
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab('visual_library')}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-teal-500 p-5 text-start transition group cursor-pointer flex flex-col justify-between gap-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                      <Images size={21} />
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
+                      {savedVisualMediaIds.length} {isRTL ? 'محفوظ' : 'saved'}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 group-hover:text-indigo-800 transition-colors">
+                      {isRTL ? 'المكتبة المرئية الجراحية' : language === 'de' ? 'Chirurgische Mediathek' : 'Surgical Visual Library'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {isRTL ? 'فيديوهات عمليات منتقاة وبحث متكامل في WeBSurg وCTSNet وMedTube.' : 'Curated operative videos & multi-platform search across WeBSurg and CTSNet.'}
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab('simulation_lab')}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-teal-500 p-5 text-start transition group cursor-pointer flex flex-col justify-between gap-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                      <FlaskConical size={21} />
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
+                      {simulationSessions.length} {isRTL ? 'جلسة' : 'sessions'}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">
+                      {isRTL ? 'مختبر المحاكاة والتدريب' : language === 'de' ? 'Simulationslabor' : 'Simulation Lab'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {isRTL ? 'حالات محاكاة تفاعلية مع أسئلة تقييم ودليل 10 منصات محاكاة عالمية.' : 'Interactive surgical case simulations, rationales & 10 global VR platforms.'}
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* 8 Real Metrics Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 tabular-nums">
                 <div
                   onClick={() => setActiveView('cases')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.totalCases}</span>
                   <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">{stats.totalCases}</span>
@@ -1008,7 +1432,7 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.totalProcedures}</span>
                   <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">{stats.totalProcedures}</span>
@@ -1017,7 +1441,7 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.totalHours}</span>
                   <span className="text-xl sm:text-2xl font-bold text-teal-700 mt-1 block">{stats.totalHours}h</span>
@@ -1026,7 +1450,7 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.verifiedHours}</span>
                   <span className="text-xl sm:text-2xl font-bold text-emerald-700 mt-1 block">{stats.verifiedHours}h</span>
@@ -1035,14 +1459,14 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.totalSupervisors}</span>
                   <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">{stats.totalSupervisors}</span>
                   <span className="text-[10px] text-slate-500 mt-1 block">{t.authorizedSupervisors}</span>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200">
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.totalHospitals}</span>
                   <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">{stats.totalHospitals}</span>
                   <span className="text-[10px] text-slate-500 mt-1 block">{t.clinicalAffiliations}</span>
@@ -1050,7 +1474,7 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.skillsPracticed}</span>
                   <span className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 block">{stats.skillsPracticed}</span>
@@ -1059,7 +1483,7 @@ function SurgiTrackApp() {
 
                 <div
                   onClick={() => setActiveView('supervisors')}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-400 transition cursor-pointer"
+                  className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-teal-400 transition cursor-pointer"
                 >
                   <span className="text-[11px] text-slate-500 font-semibold block">{t.assessedCompetencies}</span>
                   <span className="text-xl sm:text-2xl font-bold text-emerald-700 mt-1 block">{stats.assessedCompetencies}</span>
@@ -1072,7 +1496,7 @@ function SurgiTrackApp() {
 
               {/* Recent Cases & Operations Quick List */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-sm text-slate-900">{t.recentClinicalCases}</h3>
                     <button
@@ -1083,29 +1507,32 @@ function SurgiTrackApp() {
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {cases.slice(0, 3).map((c, idx) => (
                       <div
                         key={c.id ? `${c.id}-${idx}` : `recent-case-${idx}`}
                         onClick={() => setActiveView('cases')}
-                        className="p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-teal-200 transition cursor-pointer flex items-center justify-between"
+                        className="p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-teal-300 transition cursor-pointer flex items-center justify-between"
                       >
                         <div className="truncate max-w-[240px]">
-                          <span className="text-[10px] font-mono font-bold text-teal-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          <span className="text-[10px] font-mono font-bold text-teal-800">
                             {c.caseReference}
                           </span>
-                          <span className="font-bold text-xs text-slate-800 block mt-1 truncate">
+                          <span className="font-bold text-xs text-slate-800 block mt-0.5 truncate">
                             {c.primaryDiagnosis}
                           </span>
                           <span className="text-[10px] text-slate-500">{c.hospital}</span>
                         </div>
-                        <ChevronRight size={16} className="text-slate-400" />
+                        <ChevronRight size={16} className="text-slate-400 shrink-0" />
                       </div>
                     ))}
+                    {cases.length === 0 && (
+                      <p className="text-xs text-slate-400 py-4 text-center">{isRTL ? 'لا توجد حالات موثقة بعد.' : 'No clinical cases logged yet.'}</p>
+                    )}
                   </div>
                 </div>
 
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-sm text-slate-900">{t.recentSupervisedOperations}</h3>
                     <button
@@ -1116,28 +1543,33 @@ function SurgiTrackApp() {
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {trainingRecords.slice(0, 3).map((r, idx) => (
                       <div
                         key={r.id ? `${r.id}-${idx}` : `recent-rec-${idx}`}
                         onClick={() => setActiveView('supervisors')}
-                        className="p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-teal-200 transition cursor-pointer flex items-center justify-between"
+                        className="p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-teal-300 transition cursor-pointer flex items-center justify-between"
                       >
                         <div className="truncate max-w-[240px]">
                           <span className="font-bold text-xs text-slate-800 block truncate">
-                            {r.procedureName}
+                            {r.procedureName || r.specialty}
                           </span>
-                          <span className="text-[10px] text-teal-700 font-medium block">
-                            {r.participationRole} • {r.netTrainingHours}h
+                          <span className="text-[10px] text-teal-700 font-semibold tabular-nums">
+                            {r.participationRole} · {r.netTrainingHours}h
                           </span>
-                          <span className="text-[10px] text-slate-400">{r.trainingDate}</span>
+                          <span className="text-[10px] text-slate-400 block">{r.trainingDate}</span>
                         </div>
-                        <ChevronRight size={16} className="text-slate-400" />
+                        <ChevronRight size={16} className="text-slate-400 shrink-0" />
                       </div>
                     ))}
+                    {trainingRecords.length === 0 && (
+                      <p className="text-xs text-slate-400 py-4 text-center">{isRTL ? 'لا توجد عمليات موثقة بعد.' : 'No operations recorded yet.'}</p>
+                    )}
                   </div>
                 </div>
               </div>
+            </div>
+              )}
             </div>
           )}
 
@@ -1148,60 +1580,11 @@ function SurgiTrackApp() {
           {activeView === 'recommendations' && <RecommendationGenerator />}
           {activeView === 'german' && <GermanPortfolioView />}
           {activeView === 'accreditation' && <AccreditationView />}
-          {activeView === 'journals' && <MedicalJournalsView />}
-          {activeView === 'learning' && <LearningCurveView />}
           {activeView === 'backup' && <BackupRestoreView />}
           {activeView === 'profile' && (
             <UserProfileView
               onNavigateToBackup={() => setActiveView('backup')}
               onOpenYourPosts={() => setShowYourPostsModal(true)}
-            />
-          )}
-          {activeView === 'community_threads' && (
-            <CommunityThreadsView
-              language={language}
-              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
-              currentUserName={profile?.fullName || user?.displayName || 'Surgeon'}
-              currentUserSpecialty={profile?.specialty}
-              currentUserDegree={profile?.medicalQualification}
-              currentUserPhotoUrl={profile?.profilePhotoUrl}
-              currentUserPosition={profile?.currentPosition}
-              threads={threads}
-              threadReplies={threadReplies}
-              publishedCases={cases
-                .filter(c => c.isPublished)
-                .map(c => ({
-                  id: c.id,
-                  caseReference: c.caseReference,
-                  primaryDiagnosis: c.primaryDiagnosis,
-                }))}
-              onCreateThread={createThread}
-              onToggleLike={toggleThreadLike}
-              onToggleFollow={toggleThreadFollow}
-              onIncrementView={incrementThreadView}
-              onFetchReplies={fetchThreadReplies}
-              onAddReply={addThreadReply}
-              onToggleReplyLike={toggleReplyLike}
-              onMarkSolution={markThreadSolution}
-              onUpdateThreadStatus={updateThreadStatus}
-            />
-          )}
-          {activeView === 'visual_library' && (
-            <VisualLibraryView
-              language={language}
-              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
-              savedMediaIds={savedVisualMediaIds}
-              onSaveMedia={toggleSaveVisualMedia}
-              onOpenThreadForMedia={() => setActiveView('community_threads')}
-            />
-          )}
-          {activeView === 'simulation_lab' && (
-            <SimulationLabView
-              language={language}
-              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
-              traineeId={profile?.userId || user?.uid}
-              simulationSessions={simulationSessions}
-              onLogSession={logSimulationSession}
             />
           )}
           {activeView === 'cv_builder' && (
@@ -1226,11 +1609,11 @@ function SurgiTrackApp() {
         <div className="pointer-events-auto bg-[#101C32]/95 backdrop-blur-md text-white border border-teal-500/40 rounded-2xl sm:rounded-full p-1.5 shadow-2xl flex items-center justify-between gap-1">
           {quickNavItems.map(item => {
             const Icon = item.icon;
-            const isActive = activeView === item.id;
+            const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
             return (
               <button
                 key={item.id}
-                onClick={() => item.id === 'community' ? openCommunityView() : setActiveView(item.id)}
+                onClick={() => item.id === 'community' ? openCommunityView() : navigateTo(item.id)}
                 className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 px-1.5 rounded-xl sm:rounded-full transition cursor-pointer text-center ${
                   isActive
                     ? 'bg-[#0D9488] text-white font-bold shadow-md shadow-teal-900/50'

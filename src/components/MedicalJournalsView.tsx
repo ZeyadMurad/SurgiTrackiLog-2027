@@ -1,4 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+const TRENDING_JOURNAL_TOPICS = [
+  'robotic colorectal surgery',
+  'endovascular aortic aneurysm repair',
+  'enhanced recovery after surgery',
+  'laparoscopic cholecystectomy trial',
+  'pancreaticoduodenectomy outcome',
+];
 import {
   Search,
   Loader2,
@@ -82,7 +90,7 @@ export const MedicalJournalsView: React.FC = () => {
   const L = (ar: string, en: string, de?: string) => (isRTL ? ar : language === 'de' ? (de || en) : en);
 
   const [source, setSource] = useState<Source>('europmc');
-  const [term, setTerm] = useState('');
+  const [term, setTerm] = useState(() => TRENDING_JOURNAL_TOPICS[Math.floor(Date.now() / 120000) % TRENDING_JOURNAL_TOPICS.length]);
   const [sortBy, setSortBy] = useState<SortMode>('relevance');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -95,8 +103,8 @@ export const MedicalJournalsView: React.FC = () => {
   const [abstractData, setAbstractData] = useState<any>(null);
   const [abstractLoading, setAbstractLoading] = useState(false);
 
-  const search = async (pageNum = 1) => {
-    if (!term.trim()) {
+  const runSearch = useCallback(async (pageNum = 1, activeSource: Source = source, activeTerm: string = term, activeSort: SortMode = sortBy) => {
+    if (!activeTerm.trim()) {
       setError(L('يرجى إدخال مصطلح البحث أولاً.', 'Please enter a search term first.'));
       return;
     }
@@ -105,7 +113,7 @@ export const MedicalJournalsView: React.FC = () => {
     setAbstractFor(null);
     try {
       const res = await fetch(
-        `/api/journals/search?source=${source}&term=${encodeURIComponent(term.trim())}&page=${pageNum}&sort=${sortBy}`
+        `/api/journals/search?source=${activeSource}&term=${encodeURIComponent(activeTerm.trim())}&page=${pageNum}&sort=${activeSort}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed.');
@@ -113,14 +121,20 @@ export const MedicalJournalsView: React.FC = () => {
       setTotalCount(data.totalCount || 0);
       setTotalPages(data.totalPages || 0);
       setPage(data.page || 1);
-      setLastQuery(term.trim());
+      setLastQuery(activeTerm.trim());
     } catch (err: any) {
       setError(err.message || 'Search unavailable right now.');
       setResults([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [source, term, sortBy, isRTL, language]);
+
+  const search = (pageNum = 1) => runSearch(pageNum, source, term, sortBy);
+
+  useEffect(() => {
+    runSearch(1, source, term, sortBy);
+  }, [source]);
 
   const loadAbstract = async (id: string) => {
     if (abstractFor === id) {
@@ -157,7 +171,7 @@ export const MedicalJournalsView: React.FC = () => {
   };
 
   return (
-    <div className={`max-w-7xl mx-auto p-4 sm:p-6 space-y-5 ${isRTL ? 'rtl' : 'ltr'}`}>
+    <div className={`space-y-5 ${isRTL ? 'rtl' : 'ltr'}`}>
       {/* Hero */}
       <div className="bg-gradient-to-r from-[#101C32] via-[#1e3a5f] to-[#0D9488] rounded-3xl p-6 sm:p-8 text-white shadow-xl">
         <div className="flex items-center gap-4 flex-wrap">
@@ -191,7 +205,7 @@ export const MedicalJournalsView: React.FC = () => {
         {SOURCES.map(s => (
           <button
             key={s.id}
-            onClick={() => { setSource(s.id); setResults([]); setError(''); }}
+            onClick={() => { setSource(s.id); setError(''); }}
             className={`text-left rounded-2xl border p-3.5 transition cursor-pointer ${
               source === s.id
                 ? 'border-transparent text-white shadow-md bg-gradient-to-r ' + s.color

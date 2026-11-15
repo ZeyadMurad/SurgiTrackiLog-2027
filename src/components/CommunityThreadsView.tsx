@@ -193,6 +193,7 @@ export interface CommunityThreadsViewProps {
   onToggleReplyLike?: (threadId: string, replyId: string) => Promise<void>;
   onMarkSolution: (threadId: string, replyId: string) => Promise<void>;
   onUpdateThreadStatus: (threadId: string, status: ThreadStatus) => Promise<void>;
+  onOpenCase?: (caseId: string) => void;
 }
 
 export const CommunityThreadsView: React.FC<CommunityThreadsViewProps> = ({
@@ -215,6 +216,7 @@ export const CommunityThreadsView: React.FC<CommunityThreadsViewProps> = ({
   onToggleReplyLike,
   onMarkSolution,
   onUpdateThreadStatus,
+  onOpenCase,
 }) => {
   const t = I18N[language];
   const [searchQuery, setSearchQuery] = useState('');
