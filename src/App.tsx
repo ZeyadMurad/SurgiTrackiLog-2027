@@ -40,6 +40,10 @@ import {
   LibraryBig,
   TrendingUp,
   MonitorSmartphone,
+  MessagesSquare,
+  Images,
+  FlaskConical,
+  FileText,
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
@@ -67,6 +71,10 @@ import { SurgicalCommunityView, FocusedCommunityTarget } from './components/Surg
 import { TraineePortfolioExportModal } from './components/TraineePortfolioExportModal';
 import { YourPostsModal } from './components/YourPostsModal';
 import { GlobalAcademicFooter } from './components/GlobalAcademicFooter';
+import { CommunityThreadsView } from './components/CommunityThreadsView';
+import { VisualLibraryView } from './components/VisualLibraryView';
+import { SimulationLabView } from './components/SimulationLabView';
+import { CvBuilderView } from './components/CvBuilderView';
 import { translations } from './lib/i18n';
 import {
   getCasePublishTimestampMs,
@@ -91,6 +99,10 @@ type ActiveView =
   | 'accreditation'
   | 'journals'
   | 'learning'
+  | 'community_threads'
+  | 'visual_library'
+  | 'simulation_lab'
+  | 'cv_builder'
   | 'admin';
 
 const SUPER_ADMIN_EMAIL = 'zeadmorud2030@gmail.com';
@@ -128,6 +140,22 @@ function SurgiTrackApp() {
     dismissQuotaWarning,
     acceptFollowRequest,
     declineFollowRequest,
+    skills,
+    threads,
+    threadReplies,
+    fetchThreadReplies,
+    createThread,
+    toggleThreadLike,
+    toggleThreadFollow,
+    incrementThreadView,
+    addThreadReply,
+    toggleReplyLike,
+    markThreadSolution,
+    updateThreadStatus,
+    savedVisualMediaIds,
+    toggleSaveVisualMedia,
+    simulationSessions,
+    logSimulationSession,
   } = useData();
 
   // DEFAULT VIEW: Surgical Literature & News (as requested by user)
@@ -315,6 +343,10 @@ function SurgiTrackApp() {
     { id: 'accreditation', label: isRTL ? 'الاعتماد الدولي' : 'Accreditation', icon: Globe2 },
     { id: 'journals', label: isRTL ? 'محرك المجلات الطبية' : 'Medical Journals', icon: LibraryBig },
     { id: 'recommendations', label: t.recommendations, icon: Sparkles },
+    { id: 'community_threads', label: language === 'ar' ? 'المناقشات الجراحية' : language === 'de' ? 'Diskussionen' : 'Threads', icon: MessagesSquare, count: threads.length },
+    { id: 'visual_library', label: language === 'ar' ? 'المكتبة المرئية' : language === 'de' ? 'Mediathek' : 'Visual Library', icon: Images },
+    { id: 'simulation_lab', label: language === 'ar' ? 'مختبر المحاكاة' : language === 'de' ? 'Simulationslabor' : 'Simulation Lab', icon: FlaskConical, count: simulationSessions.length },
+    { id: 'cv_builder', label: language === 'ar' ? 'مُولّد السيرة الذاتية' : language === 'de' ? 'CV-Generator' : 'CV Builder', icon: FileText },
     { id: 'german', label: t.germanPortfolio, icon: FileCheck2 },
     { id: 'backup', label: t.backup, icon: HardDrive },
     { id: 'profile', label: t.profile, icon: User },
@@ -1123,6 +1155,63 @@ function SurgiTrackApp() {
             <UserProfileView
               onNavigateToBackup={() => setActiveView('backup')}
               onOpenYourPosts={() => setShowYourPostsModal(true)}
+            />
+          )}
+          {activeView === 'community_threads' && (
+            <CommunityThreadsView
+              language={language}
+              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+              currentUserName={profile?.fullName || user?.displayName || 'Surgeon'}
+              currentUserSpecialty={profile?.specialty}
+              currentUserDegree={profile?.medicalQualification}
+              currentUserPhotoUrl={profile?.profilePhotoUrl}
+              currentUserPosition={profile?.currentPosition}
+              threads={threads}
+              threadReplies={threadReplies}
+              publishedCases={cases
+                .filter(c => c.isPublished)
+                .map(c => ({
+                  id: c.id,
+                  caseReference: c.caseReference,
+                  primaryDiagnosis: c.primaryDiagnosis,
+                }))}
+              onCreateThread={createThread}
+              onToggleLike={toggleThreadLike}
+              onToggleFollow={toggleThreadFollow}
+              onIncrementView={incrementThreadView}
+              onFetchReplies={fetchThreadReplies}
+              onAddReply={addThreadReply}
+              onToggleReplyLike={toggleReplyLike}
+              onMarkSolution={markThreadSolution}
+              onUpdateThreadStatus={updateThreadStatus}
+            />
+          )}
+          {activeView === 'visual_library' && (
+            <VisualLibraryView
+              language={language}
+              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+              savedMediaIds={savedVisualMediaIds}
+              onSaveMedia={toggleSaveVisualMedia}
+              onOpenThreadForMedia={() => setActiveView('community_threads')}
+            />
+          )}
+          {activeView === 'simulation_lab' && (
+            <SimulationLabView
+              language={language}
+              currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+              traineeId={profile?.userId || user?.uid}
+              simulationSessions={simulationSessions}
+              onLogSession={logSimulationSession}
+            />
+          )}
+          {activeView === 'cv_builder' && (
+            <CvBuilderView
+              language={language}
+              profile={profile}
+              cases={cases}
+              trainingRecords={trainingRecords}
+              skills={skills}
+              supervisors={supervisors}
             />
           )}
           {activeView === 'admin' && <AdminPanelView />}

@@ -101,6 +101,7 @@ service cloud.firestore {
         && (!('role' in data) || (data.role in ['normal_user', 'super_admin']))
         && (!('verifiedHours' in data) || (data.verifiedHours is number && data.verifiedHours >= 0))
         && (!('verifiedProcedures' in data) || (data.verifiedProcedures is number && data.verifiedProcedures >= 0))
+        && (!('savedVisualMedia' in data) || (data.savedVisualMedia is list && data.savedVisualMedia.size() <= 500))
         && (!('role' in data) || data.role != 'super_admin' || (('email' in data) && data.email == 'zeadmorud2030@gmail.com'));
     }
 
@@ -159,6 +160,104 @@ service cloud.firestore {
         && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 2048))
         && data.createdAt is string && data.createdAt.size() <= 64
         && (!('createdAtServer' in data) || data.createdAtServer == request.time);
+    }
+
+    function isValidCommunityThreadPayload(data) {
+      return data.keys().hasAll([
+          'id', 'authorId', 'authorName', 'title', 'body', 'category', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'authorId', 'authorName', 'authorDegree', 'authorSpecialty', 'authorPhotoUrl', 'authorPosition',
+          'title', 'body', 'category', 'tags', 'status', 'linkedCaseId', 'linkedCaseReference', 'linkedCaseTitle',
+          'acceptedReplyId', 'pinnedAt', 'deletedByAdmin', 'viewsCount', 'repliesCount', 'likesCount',
+          'viewedByUserIds', 'likedByUserIds', 'followers', 'lastReplyByUserId', 'lastReplyByName',
+          'lastActivityAt', 'lastActivityAtServer', 'createdAt', 'createdAtServer', 'updatedAt', 'updatedAtServer'
+        ])
+        && isValidId(data.id)
+        && data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
+        && (!('authorDegree' in data) || (data.authorDegree is string && data.authorDegree.size() <= 120))
+        && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 2048))
+        && (!('authorPosition' in data) || (data.authorPosition is string && data.authorPosition.size() <= 150))
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 300
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 30000
+        && data.category in ['case_discussion', 'technique', 'research', 'education', 'guidelines', 'complications', 'general', 'career']
+        && data.status in ['open', 'answered', 'closed', 'pinned']
+        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12))
+        && (!('linkedCaseId' in data) || (data.linkedCaseId is string && data.linkedCaseId.size() <= 160))
+        && (!('linkedCaseReference' in data) || (data.linkedCaseReference is string && data.linkedCaseReference.size() <= 100))
+        && (!('linkedCaseTitle' in data) || (data.linkedCaseTitle is string && data.linkedCaseTitle.size() <= 500))
+        && (!('acceptedReplyId' in data) || (data.acceptedReplyId is string && data.acceptedReplyId.size() <= 160))
+        && (!('pinnedAt' in data) || (data.pinnedAt is string && data.pinnedAt.size() <= 64))
+        && (!('deletedByAdmin' in data) || data.deletedByAdmin is bool)
+        && (!('viewsCount' in data) || (data.viewsCount is number && data.viewsCount >= 0))
+        && (!('repliesCount' in data) || (data.repliesCount is number && data.repliesCount >= 0))
+        && (!('likesCount' in data) || (data.likesCount is number && data.likesCount >= 0))
+        && (!('viewedByUserIds' in data) || (data.viewedByUserIds is list && data.viewedByUserIds.size() <= 5000))
+        && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
+        && (!('followers' in data) || (data.followers is list && data.followers.size() <= 5000))
+        && (!('lastReplyByUserId' in data) || (data.lastReplyByUserId is string && data.lastReplyByUserId.size() <= 128))
+        && (!('lastReplyByName' in data) || (data.lastReplyByName is string && data.lastReplyByName.size() <= 150))
+        && (!('lastActivityAt' in data) || (data.lastActivityAt is string && data.lastActivityAt.size() <= 64))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidThreadReplyPayload(data) {
+      return data.keys().hasAll([
+          'id', 'threadId', 'authorId', 'authorName', 'body', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'threadId', 'authorId', 'authorName', 'authorDegree', 'authorSpecialty',
+          'authorPhotoUrl', 'authorPosition', 'body', 'parentReplyId', 'likedByUserIds',
+          'likesCount', 'deletedByAdmin', 'createdAt', 'createdAtServer', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.threadId)
+        && data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
+        && (!('authorDegree' in data) || (data.authorDegree is string && data.authorDegree.size() <= 120))
+        && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 2048))
+        && (!('authorPosition' in data) || (data.authorPosition is string && data.authorPosition.size() <= 150))
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 15000
+        && (!('parentReplyId' in data) || (data.parentReplyId is string && data.parentReplyId.size() <= 160))
+        && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
+        && (!('likesCount' in data) || (data.likesCount is number && data.likesCount >= 0))
+        && (!('deletedByAdmin' in data) || data.deletedByAdmin is bool)
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidSimulationSessionPayload(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'sessionDate', 'sessionType', 'scenarioName', 'durationMinutes', 'verified', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'traineeId', 'sessionDate', 'sessionType', 'platformId', 'platformName',
+          'scenarioName', 'procedureName', 'specialty', 'durationMinutes', 'overallScore', 'accuracyScore',
+          'skillsPracticed', 'quizResults', 'verified', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && (!('traineeId' in data) || (data.traineeId is string && data.traineeId.size() <= 128))
+        && data.sessionDate is string && data.sessionDate.size() <= 64
+        && data.sessionType in ['vr_simulation', 'box_trainer', 'cadaveric', 'virtual_patient', 'case_based_quiz', 'team_scenario', 'procedural_rehearsal']
+        && (!('platformId' in data) || (data.platformId is string && data.platformId.size() <= 128))
+        && (!('platformName' in data) || (data.platformName is string && data.platformName.size() <= 200))
+        && data.scenarioName is string && data.scenarioName.size() >= 1 && data.scenarioName.size() <= 300
+        && (!('procedureName' in data) || (data.procedureName is string && data.procedureName.size() <= 300))
+        && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 150))
+        && data.durationMinutes is number && data.durationMinutes >= 0 && data.durationMinutes <= 1440
+        && (!('overallScore' in data) || (data.overallScore is number && data.overallScore >= 0 && data.overallScore <= 100))
+        && (!('accuracyScore' in data) || (data.accuracyScore is number && data.accuracyScore >= 0 && data.accuracyScore <= 100))
+        && (!('skillsPracticed' in data) || (data.skillsPracticed is list && data.skillsPracticed.size() <= 50))
+        && (!('quizResults' in data) || (data.quizResults is list && data.quizResults.size() <= 100))
+        && data.verified is bool
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
     }
 
     function isValidViewedCasePayload(data) {
@@ -288,6 +387,91 @@ service cloud.firestore {
           && isUserOrAliasOwner(userId);
         allow list: if isValidId(userId)
           && isUserOrAliasOwner(userId);
+      }
+
+      match /simulationSessions/{sessionId} {
+        allow get: if isValidId(userId) && isValidId(sessionId)
+          && isUserOrAliasOwner(userId);
+        allow list: if isValidId(userId)
+          && isUserOrAliasOwner(userId);
+        allow create: if isValidId(userId) && isValidId(sessionId)
+          && isUserOrAliasOwner(userId)
+          && isValidSimulationSessionPayload(incoming())
+          && incoming().id == sessionId
+          && incoming().userId == userId;
+        allow update: if isValidId(userId) && isValidId(sessionId)
+          && isUserOrAliasOwner(userId)
+          && isValidSimulationSessionPayload(incoming())
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId;
+        allow delete: if isValidId(userId) && isValidId(sessionId)
+          && isUserOrAliasOwner(userId);
+      }
+    }
+
+    // Long-Form Surgical Community Threads & Nested Replies
+    match /communityThreads/{threadId} {
+      allow get: if isValidId(threadId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.deletedByAdmin == false || isSuperAdmin());
+
+      allow create: if isValidId(threadId)
+        && isSignedIn()
+        && isValidCommunityThreadPayload(incoming())
+        && incoming().id == threadId
+        && (incoming().authorId == request.auth.uid || isSuperAdmin())
+        && (!('deletedByAdmin' in incoming()) || incoming().deletedByAdmin == false || isSuperAdmin());
+
+      allow update: if isValidId(threadId)
+        && isSignedIn()
+        && isValidCommunityThreadPayload(incoming())
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'likedByUserIds', 'likesCount', 'followers', 'viewsCount', 'viewedByUserIds',
+            'repliesCount', 'lastActivityAt', 'lastActivityAtServer', 'lastReplyByUserId', 'lastReplyByName',
+            'updatedAt', 'updatedAtServer'
+          ])
+          || (
+            existing().authorId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'body', 'category', 'tags', 'status', 'acceptedReplyId', 'updatedAt', 'updatedAtServer'
+            ])
+          )
+          || isSuperAdmin()
+        );
+
+      allow delete: if isValidId(threadId)
+        && (existing().authorId == request.auth.uid || isSuperAdmin());
+
+      match /replies/{replyId} {
+        allow get: if isValidId(threadId) && isValidId(replyId) && isSignedIn();
+        allow list: if isValidId(threadId) && isSignedIn() && (resource.data.deletedByAdmin == false || isSuperAdmin());
+
+        allow create: if isValidId(threadId) && isValidId(replyId)
+          && isSignedIn()
+          && isValidThreadReplyPayload(incoming())
+          && incoming().id == replyId
+          && incoming().threadId == threadId
+          && (incoming().authorId == request.auth.uid || isSuperAdmin())
+          && existsAfter(/databases/$(database)/documents/communityThreads/$(threadId));
+
+        allow update: if isValidId(threadId) && isValidId(replyId)
+          && isSignedIn()
+          && isValidThreadReplyPayload(incoming())
+          && incoming().authorId == existing().authorId
+          && incoming().threadId == existing().threadId
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['likedByUserIds', 'likesCount', 'updatedAt'])
+            || (
+              existing().authorId == request.auth.uid
+              && incoming().diff(existing()).affectedKeys().hasOnly(['body', 'updatedAt'])
+            )
+            || isSuperAdmin()
+          );
+
+        allow delete: if isValidId(threadId) && isValidId(replyId)
+          && (existing().authorId == request.auth.uid || isSuperAdmin());
       }
     }
 

@@ -5,325 +5,1239 @@
       "description": "User profile containing professional surgeon/trainee details and verified metrics.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "maxLength": 128 },
-        "aliasIds": { "type": "array" },
-        "fullName": { "type": "string", "maxLength": 150 },
-        "email": { "type": "string", "maxLength": 150 },
-        "country": { "type": "string", "maxLength": 100 },
-        "medicalQualification": { "type": "string", "maxLength": 150 },
-        "currentPosition": { "type": "string", "maxLength": 100 },
-        "specialty": { "type": "string", "maxLength": 100 },
-        "hospitals": { "type": "string", "maxLength": 250 },
-        "biography": { "type": "string", "maxLength": 2000 },
-        "profilePhotoUrl": { "type": "string", "maxLength": 2048 },
-        "role": { "type": "string", "enum": ["normal_user", "super_admin"] },
-        "preferredLanguage": { "type": "string", "enum": ["en", "ar", "de"] },
-        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
-        "followers": { "type": "array" },
-        "following": { "type": "array" },
-        "pendingFollowRequests": { "type": "array" },
-        "followersCount": { "type": "number" },
-        "followingCount": { "type": "number" },
-        "showProgressStats": { "type": "boolean" },
-        "showPortfolioToFollowers": { "type": "boolean" },
-        "requireApprovalToFollow": { "type": "boolean" },
-        "totalHours": { "type": "number" },
-        "totalProcedures": { "type": "number" },
-        "verifiedHours": { "type": "number" },
-        "verifiedProcedures": { "type": "number" },
-        "publishedCasesCount": { "type": "number" },
-        "status": { "type": "string", "maxLength": 40 },
-        "emailVerified": { "type": "boolean" },
-        "deletedByAdmin": { "type": "boolean" },
-        "disabled": { "type": "boolean" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "aliasIds": {
+          "type": "array"
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "country": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "medicalQualification": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "currentPosition": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "hospitals": {
+          "type": "string",
+          "maxLength": 250
+        },
+        "biography": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "profilePhotoUrl": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "normal_user",
+            "super_admin"
+          ]
+        },
+        "preferredLanguage": {
+          "type": "string",
+          "enum": [
+            "en",
+            "ar",
+            "de"
+          ]
+        },
+        "theme": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark",
+            "system"
+          ]
+        },
+        "followers": {
+          "type": "array"
+        },
+        "following": {
+          "type": "array"
+        },
+        "pendingFollowRequests": {
+          "type": "array"
+        },
+        "followersCount": {
+          "type": "number"
+        },
+        "followingCount": {
+          "type": "number"
+        },
+        "showProgressStats": {
+          "type": "boolean"
+        },
+        "showPortfolioToFollowers": {
+          "type": "boolean"
+        },
+        "requireApprovalToFollow": {
+          "type": "boolean"
+        },
+        "totalHours": {
+          "type": "number"
+        },
+        "totalProcedures": {
+          "type": "number"
+        },
+        "verifiedHours": {
+          "type": "number"
+        },
+        "verifiedProcedures": {
+          "type": "number"
+        },
+        "publishedCasesCount": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "emailVerified": {
+          "type": "boolean"
+        },
+        "deletedByAdmin": {
+          "type": "boolean"
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "savedVisualMedia": {
+          "type": "array",
+          "description": "Bookmarked Visual Library item IDs."
+        }
       },
-      "required": ["userId", "fullName", "email"]
+      "required": [
+        "userId",
+        "fullName",
+        "email"
+      ]
     },
     "ClinicalCase": {
       "title": "ClinicalCase",
       "description": "Anonymized clinical case record adhering strictly to patient privacy rules.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "caseReference": { "type": "string", "maxLength": 64 },
-        "patientAge": { "type": "number" },
-        "patientSex": { "type": "string", "enum": ["Male", "Female", "Other", "Undisclosed", ""] },
-        "presentationDate": { "type": "string", "maxLength": 30 },
-        "hospital": { "type": "string", "maxLength": 150 },
-        "department": { "type": "string", "maxLength": 150 },
-        "specialty": { "type": "string", "maxLength": 100 },
-        "chiefComplaint": { "type": "string", "maxLength": 500 },
-        "historyOfPresentIllness": { "type": "string", "maxLength": 3000 },
-        "durationOfSymptoms": { "type": "string", "maxLength": 100 },
-        "relevantMedicalHistory": { "type": "string", "maxLength": 2000 },
-        "surgicalHistory": { "type": "string", "maxLength": 2000 },
-        "drugHistory": { "type": "string", "maxLength": 1000 },
-        "allergies": { "type": "string", "maxLength": 500 },
-        "familyHistory": { "type": "string", "maxLength": 1000 },
-        "socialHistory": { "type": "string", "maxLength": 1000 },
-        "examination": { "type": "object" },
-        "investigations": { "type": "array" },
-        "primaryDiagnosis": { "type": "string", "maxLength": 200 },
-        "secondaryDiagnoses": { "type": "string", "maxLength": 500 },
-        "differentialDiagnosis": { "type": "string", "maxLength": 500 },
-        "icd10Code": { "type": "string", "maxLength": 50 },
-        "clinicalAssessment": { "type": "string", "maxLength": 2000 },
-        "management": { "type": "object" },
-        "surgicalProcedure": { "type": "object" },
-        "followUp": { "type": "object" },
-        "attachments": { "type": "array" },
-        "isPublished": { "type": "boolean" },
-        "publishedAt": { "type": "string" },
-        "publishedAtServer": { "type": "string", "description": "Server-generated publication timestamp" },
-        "authorName": { "type": "string", "maxLength": 150 },
-        "authorEmail": { "type": "string", "maxLength": 150 },
-        "authorSpecialty": { "type": "string", "maxLength": 100 },
-        "authorHospital": { "type": "string", "maxLength": 250 },
-        "authorPhotoUrl": { "type": "string", "maxLength": 2048 },
-        "likesCount": { "type": "number" },
-        "likedByUserIds": { "type": "array" },
-        "likedByUsers": { "type": "array" },
-        "commentsCount": { "type": "number" },
-        "comments": { "type": "array" },
-        "createdAt": { "type": "string" },
-        "createdAtServer": { "type": "string", "description": "Server-generated creation timestamp" },
-        "updatedAt": { "type": "string" },
-        "updatedAtServer": { "type": "string", "description": "Server-generated update timestamp" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "caseReference": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "patientAge": {
+          "type": "number"
+        },
+        "patientSex": {
+          "type": "string",
+          "enum": [
+            "Male",
+            "Female",
+            "Other",
+            "Undisclosed",
+            ""
+          ]
+        },
+        "presentationDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "chiefComplaint": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "historyOfPresentIllness": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "durationOfSymptoms": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "relevantMedicalHistory": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "surgicalHistory": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "drugHistory": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "allergies": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "familyHistory": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "socialHistory": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "examination": {
+          "type": "object"
+        },
+        "investigations": {
+          "type": "array"
+        },
+        "primaryDiagnosis": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "secondaryDiagnoses": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "differentialDiagnosis": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "icd10Code": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "clinicalAssessment": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "management": {
+          "type": "object"
+        },
+        "surgicalProcedure": {
+          "type": "object"
+        },
+        "followUp": {
+          "type": "object"
+        },
+        "attachments": {
+          "type": "array"
+        },
+        "isPublished": {
+          "type": "boolean"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "publishedAtServer": {
+          "type": "string",
+          "description": "Server-generated publication timestamp"
+        },
+        "authorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "authorEmail": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "authorSpecialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "authorHospital": {
+          "type": "string",
+          "maxLength": 250
+        },
+        "authorPhotoUrl": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "likesCount": {
+          "type": "number"
+        },
+        "likedByUserIds": {
+          "type": "array"
+        },
+        "likedByUsers": {
+          "type": "array"
+        },
+        "commentsCount": {
+          "type": "number"
+        },
+        "comments": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdAtServer": {
+          "type": "string",
+          "description": "Server-generated creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "updatedAtServer": {
+          "type": "string",
+          "description": "Server-generated update timestamp"
+        }
       },
-      "required": ["id", "userId", "caseReference", "presentationDate", "specialty", "primaryDiagnosis"]
+      "required": [
+        "id",
+        "userId",
+        "caseReference",
+        "presentationDate",
+        "specialty",
+        "primaryDiagnosis"
+      ]
     },
     "Supervisor": {
       "title": "Supervisor",
       "description": "Consultant or academic supervisor profile with independent logbook tracking.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "fullName": { "type": "string", "maxLength": 150 },
-        "academicDegree": { "type": "string", "maxLength": 100 },
-        "academicTitle": { "type": "string", "maxLength": 100 },
-        "professionalPosition": { "type": "string", "maxLength": 150 },
-        "specialty": { "type": "string", "maxLength": 100 },
-        "subspecialty": { "type": "string", "maxLength": 100 },
-        "department": { "type": "string", "maxLength": 150 },
-        "hospital": { "type": "string", "maxLength": 150 },
-        "university": { "type": "string", "maxLength": 150 },
-        "country": { "type": "string", "maxLength": 100 },
-        "email": { "type": "string", "maxLength": 150 },
-        "additionalNotes": { "type": "string", "maxLength": 2000 },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "academicDegree": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "academicTitle": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "professionalPosition": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "subspecialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "university": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "country": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "additionalNotes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "fullName", "professionalPosition", "specialty", "hospital"]
+      "required": [
+        "id",
+        "userId",
+        "fullName",
+        "professionalPosition",
+        "specialty",
+        "hospital"
+      ]
     },
     "TrainingRecord": {
       "title": "TrainingRecord",
       "description": "Supervised training and surgical procedure record belonging strictly to a supervisor.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "supervisorId": { "type": "string", "maxLength": 128 },
-        "trainingDate": { "type": "string", "maxLength": 30 },
-        "procedureDate": { "type": "string", "maxLength": 30 },
-        "hospital": { "type": "string", "maxLength": 150 },
-        "department": { "type": "string", "maxLength": 150 },
-        "specialty": { "type": "string", "maxLength": 100 },
-        "activityType": { "type": "string", "maxLength": 100 },
-        "procedureName": { "type": "string", "maxLength": 200 },
-        "clinicalCaseRef": { "type": "string", "maxLength": 64 },
-        "startTime": { "type": "string", "maxLength": 10 },
-        "endTime": { "type": "string", "maxLength": 10 },
-        "breakDurationMinutes": { "type": "number" },
-        "netTrainingHours": { "type": "number" },
-        "surgicalExposure": { "type": "string", "maxLength": 100 },
-        "participationRole": { "type": "string", "maxLength": 100 },
-        "participationGerman": { "type": "string", "maxLength": 150 },
-        "descriptionOfParticipation": { "type": "string", "maxLength": 2000 },
-        "responsibilities": { "type": "string", "maxLength": 1500 },
-        "surgicalTechniquesObserved": { "type": "string", "maxLength": 1500 },
-        "surgicalTechniquesPracticed": { "type": "string", "maxLength": 1500 },
-        "supervisionLevel": { "type": "string", "maxLength": 100 },
-        "skillsAcquired": { "type": "array" },
-        "learningPoints": { "type": "string", "maxLength": 1500 },
-        "supervisorFeedback": { "type": "string", "maxLength": 2000 },
-        "additionalNotes": { "type": "string", "maxLength": 1500 },
-        "verified": { "type": "boolean" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supervisorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "trainingDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "procedureDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "activityType": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "procedureName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "clinicalCaseRef": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "startTime": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "endTime": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "breakDurationMinutes": {
+          "type": "number"
+        },
+        "netTrainingHours": {
+          "type": "number"
+        },
+        "surgicalExposure": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "participationRole": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "participationGerman": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "descriptionOfParticipation": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "responsibilities": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "surgicalTechniquesObserved": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "surgicalTechniquesPracticed": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "supervisionLevel": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "skillsAcquired": {
+          "type": "array"
+        },
+        "learningPoints": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "supervisorFeedback": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "additionalNotes": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "supervisorId", "trainingDate", "procedureName", "netTrainingHours"]
+      "required": [
+        "id",
+        "userId",
+        "supervisorId",
+        "trainingDate",
+        "procedureName",
+        "netTrainingHours"
+      ]
     },
     "TrainingSession": {
       "title": "TrainingSession",
       "description": "Precise training session for accurate hours tracking.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "supervisorId": { "type": "string", "maxLength": 128 },
-        "supervisorName": { "type": "string", "maxLength": 150 },
-        "hospital": { "type": "string", "maxLength": 150 },
-        "department": { "type": "string", "maxLength": 150 },
-        "trainingDate": { "type": "string", "maxLength": 30 },
-        "startTime": { "type": "string", "maxLength": 10 },
-        "endTime": { "type": "string", "maxLength": 10 },
-        "breakDurationMinutes": { "type": "number" },
-        "netTrainingHours": { "type": "number" },
-        "sessionType": { "type": "string", "maxLength": 100 },
-        "trainingActivities": { "type": "string", "maxLength": 1500 },
-        "skillsPracticed": { "type": "array" },
-        "notes": { "type": "string", "maxLength": 1500 },
-        "verified": { "type": "boolean" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supervisorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supervisorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "hospital": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "trainingDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "startTime": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "endTime": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "breakDurationMinutes": {
+          "type": "number"
+        },
+        "netTrainingHours": {
+          "type": "number"
+        },
+        "sessionType": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "trainingActivities": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "skillsPracticed": {
+          "type": "array"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "trainingDate", "startTime", "endTime", "netTrainingHours"]
+      "required": [
+        "id",
+        "userId",
+        "trainingDate",
+        "startTime",
+        "endTime",
+        "netTrainingHours"
+      ]
     },
     "UserSkill": {
       "title": "UserSkill",
       "description": "Cumulative surgical skill item in the user's competency matrix.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "name": { "type": "string", "maxLength": 150 },
-        "nameGerman": { "type": "string", "maxLength": 150 },
-        "specialty": { "type": "string", "maxLength": 100 },
-        "category": { "type": "string", "maxLength": 100 },
-        "exposureLevel": { "type": "string", "enum": ["Observed", "Assisted", "Performed Specific Steps Under Direct Supervision", "Performed Under Direct Supervision", "Assessed by Supervisor"] },
-        "competencyStatus": { "type": "string", "enum": ["Not Yet Assessed", "Learning", "Practicing", "Supervisor Assessed", "Competency Confirmed"] },
-        "totalRecordedSessions": { "type": "number" },
-        "totalDocumentedHours": { "type": "number" },
-        "lastPracticedDate": { "type": "string", "maxLength": 30 },
-        "supervisors": { "type": "array" },
-        "hospitals": { "type": "array" },
-        "feedbackNotes": { "type": "string", "maxLength": 2000 },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "nameGerman": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "exposureLevel": {
+          "type": "string",
+          "enum": [
+            "Observed",
+            "Assisted",
+            "Performed Specific Steps Under Direct Supervision",
+            "Performed Under Direct Supervision",
+            "Assessed by Supervisor"
+          ]
+        },
+        "competencyStatus": {
+          "type": "string",
+          "enum": [
+            "Not Yet Assessed",
+            "Learning",
+            "Practicing",
+            "Supervisor Assessed",
+            "Competency Confirmed"
+          ]
+        },
+        "totalRecordedSessions": {
+          "type": "number"
+        },
+        "totalDocumentedHours": {
+          "type": "number"
+        },
+        "lastPracticedDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "supervisors": {
+          "type": "array"
+        },
+        "hospitals": {
+          "type": "array"
+        },
+        "feedbackNotes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "name", "specialty"]
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "specialty"
+      ]
     },
     "Recommendation": {
       "title": "Recommendation",
       "description": "Generated or drafted supervisor recommendation letter.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "supervisorId": { "type": "string", "maxLength": 128 },
-        "supervisorName": { "type": "string", "maxLength": 150 },
-        "language": { "type": "string", "enum": ["en", "de", "ar"] },
-        "title": { "type": "string", "maxLength": 200 },
-        "letterDate": { "type": "string", "maxLength": 30 },
-        "recipient": { "type": "string", "maxLength": 300 },
-        "content": { "type": "string", "maxLength": 15000 },
-        "status": { "type": "string", "enum": ["draft", "finalized"] },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supervisorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supervisorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "de",
+            "ar"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "letterDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "recipient": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 15000
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "finalized"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "supervisorId", "content"]
+      "required": [
+        "id",
+        "userId",
+        "supervisorId",
+        "content"
+      ]
     },
     "SavedArticle": {
       "title": "SavedArticle",
       "description": "Bookmarked medical journal or international surgical news article.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "title": { "type": "string", "maxLength": 300 },
-        "url": { "type": "string", "maxLength": 1024 },
-        "publisher": { "type": "string", "maxLength": 150 },
-        "category": { "type": "string", "maxLength": 100 },
-        "publishedDate": { "type": "string", "maxLength": 50 },
-        "summary": { "type": "string", "maxLength": 2000 },
-        "savedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "publisher": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "publishedDate": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "savedAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "userId", "title", "url"]
+      "required": [
+        "id",
+        "userId",
+        "title",
+        "url"
+      ]
     },
     "AppNotification": {
       "title": "AppNotification",
       "description": "Persistent social, publication, follow, and administrative notifications.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 160 },
-        "title": { "type": "string", "maxLength": 300 },
-        "message": { "type": "string", "maxLength": 5000 },
-        "category": { "type": "string", "enum": ["announcement", "maintenance", "update", "urgent", "social"] },
-        "type": { "type": "string", "maxLength": 64 },
-        "senderUserId": { "type": "string", "maxLength": 128 },
-        "senderName": { "type": "string", "maxLength": 150 },
-        "targetUserId": { "type": "string", "maxLength": 128 },
-        "targetCaseId": { "type": "string", "maxLength": 128 },
-        "targetCaseTitle": { "type": "string", "maxLength": 300 },
-        "navigationRef": { "type": "string", "maxLength": 300 },
-        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "rejected"] },
-        "readByUserIds": { "type": "array" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "announcement",
+            "maintenance",
+            "update",
+            "urgent",
+            "social"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "senderUserId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "senderName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "targetUserId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "targetCaseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "targetCaseTitle": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "navigationRef": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "accepted",
+            "declined",
+            "rejected"
+          ]
+        },
+        "readByUserIds": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "title", "message", "category", "createdAt"]
+      "required": [
+        "id",
+        "title",
+        "message",
+        "category",
+        "createdAt"
+      ]
     },
     "NotificationReply": {
       "title": "NotificationReply",
       "description": "Direct user replies to administrative announcements.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "notificationId": { "type": "string", "maxLength": 160 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "userName": { "type": "string", "maxLength": 150 },
-        "userEmail": { "type": "string", "maxLength": 150 },
-        "replyMessage": { "type": "string", "maxLength": 5000 },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "notificationId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "userEmail": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "replyMessage": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "notificationId", "userId", "replyMessage"]
+      "required": [
+        "id",
+        "notificationId",
+        "userId",
+        "replyMessage"
+      ]
     },
     "CommunityComment": {
       "title": "CommunityComment",
       "description": "Permanent comment stored in a published clinical case subcollection.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "caseId": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "userName": { "type": "string", "maxLength": 150 },
-        "userSpecialty": { "type": "string", "maxLength": 150 },
-        "userPhotoUrl": { "type": "string", "maxLength": 2048 },
-        "commentText": { "type": "string", "maxLength": 5000 },
-        "createdAt": { "type": "string" },
-        "createdAtServer": { "type": "string" }
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "caseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "userSpecialty": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "userPhotoUrl": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "commentText": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdAtServer": {
+          "type": "string"
+        }
       },
-      "required": ["id", "caseId", "userId", "userName", "commentText", "createdAt"]
+      "required": [
+        "id",
+        "caseId",
+        "userId",
+        "userName",
+        "commentText",
+        "createdAt"
+      ]
     },
     "CommunityLike": {
       "title": "CommunityLike",
       "description": "Permanent like record keyed by userId inside a published clinical case subcollection.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "maxLength": 128 },
-        "caseId": { "type": "string", "maxLength": 128 },
-        "fullName": { "type": "string", "maxLength": 150 },
-        "specialty": { "type": "string", "maxLength": 150 },
-        "photoUrl": { "type": "string", "maxLength": 2048 },
-        "createdAt": { "type": "string" },
-        "createdAtServer": { "type": "string" }
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "caseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdAtServer": {
+          "type": "string"
+        }
       },
-      "required": ["userId", "caseId", "fullName", "createdAt"]
+      "required": [
+        "userId",
+        "caseId",
+        "fullName",
+        "createdAt"
+      ]
     },
     "ViewedCommunityCase": {
       "title": "ViewedCommunityCase",
       "description": "Per-user persisted record tracking which community publications have been viewed.",
       "type": "object",
       "properties": {
-        "caseId": { "type": "string", "maxLength": 128 },
-        "userId": { "type": "string", "maxLength": 128 },
-        "viewedAt": { "type": "string" },
-        "viewedAtServer": { "type": "string" }
+        "caseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "viewedAt": {
+          "type": "string"
+        },
+        "viewedAtServer": {
+          "type": "string"
+        }
       },
-      "required": ["caseId", "userId", "viewedAt"]
+      "required": [
+        "caseId",
+        "userId",
+        "viewedAt"
+      ]
+    },
+    "CommunityThread": {
+      "title": "CommunityThread",
+      "description": "Long-form surgical discussion thread linked optionally to a published clinical case.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "authorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "authorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 30000
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "case_discussion",
+            "technique",
+            "research",
+            "education",
+            "guidelines",
+            "complications",
+            "general",
+            "career"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "answered",
+            "closed",
+            "pinned"
+          ]
+        },
+        "deletedByAdmin": {
+          "type": "boolean"
+        },
+        "viewsCount": {
+          "type": "number"
+        },
+        "repliesCount": {
+          "type": "number"
+        },
+        "likesCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "authorName",
+        "title",
+        "body",
+        "category",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ThreadReply": {
+      "title": "ThreadReply",
+      "description": "Reply within a surgical community discussion thread.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "threadId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "authorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "authorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 15000
+        },
+        "deletedByAdmin": {
+          "type": "boolean"
+        },
+        "likesCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "threadId",
+        "authorId",
+        "authorName",
+        "body",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SimulationSession": {
+      "title": "SimulationSession",
+      "description": "Logged surgical simulation practice or interactive case quiz session.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sessionDate": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "sessionType": {
+          "type": "string",
+          "enum": [
+            "vr_simulation",
+            "box_trainer",
+            "cadaveric",
+            "virtual_patient",
+            "case_based_quiz",
+            "team_scenario",
+            "procedural_rehearsal"
+          ]
+        },
+        "scenarioName": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "durationMinutes": {
+          "type": "number"
+        },
+        "overallScore": {
+          "type": "number"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "sessionDate",
+        "sessionType",
+        "scenarioName",
+        "durationMinutes",
+        "verified",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -382,6 +1296,18 @@
     "/notification_replies/{replyId}": {
       "schema": "NotificationReply",
       "description": "User responses to administrative broadcasts."
+    },
+    "/communityThreads/{threadId}": {
+      "schema": "CommunityThread",
+      "description": "Surgical community long-form discussion threads."
+    },
+    "/communityThreads/{threadId}/replies/{replyId}": {
+      "schema": "ThreadReply",
+      "description": "Replies belonging to a community thread."
+    },
+    "/users/{userId}/simulationSessions/{sessionId}": {
+      "schema": "SimulationSession",
+      "description": "Simulation lab session logs owned by a trainee/surgeon."
     }
   }
 }

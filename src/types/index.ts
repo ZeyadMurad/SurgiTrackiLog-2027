@@ -32,6 +32,7 @@ export interface UserProfile {
   verifiedProcedures?: number;
   publishedCasesCount?: number;
   disabled?: boolean;
+  savedVisualMedia?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -401,3 +402,4 @@ export interface NotificationReply {
   createdAt: string;
 }
 
+export * from './newTypes';

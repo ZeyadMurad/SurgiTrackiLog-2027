@@ -45,6 +45,10 @@ import {
   SyncStatus,
   AppNotification,
   SupervisorSignature,
+  CommunityThread,
+  ThreadReply,
+  ThreadStatus,
+  SimulationSession,
 } from '../types';
 import { DEFAULT_SURGICAL_SKILLS } from '../lib/medicalDefaults';
 import { matchDoctorCase, normalizeSurgeonName } from '../lib/doctorUtils';
@@ -143,6 +147,27 @@ interface DataContextType {
   isArticleSaved: (articleId: string) => boolean;
   syncNow: () => Promise<void>;
 
+  // === Community Threads ===
+  threads: CommunityThread[];
+  threadReplies: Record<string, ThreadReply[]>;
+  fetchThreadReplies: (threadId: string) => Promise<void>;
+  createThread: (data: Omit<CommunityThread, 'id' | 'createdAt' | 'updatedAt' | 'viewsCount' | 'repliesCount' | 'likesCount' | 'viewedByUserIds' | 'likedByUserIds' | 'followers'>) => Promise<void>;
+  toggleThreadLike: (threadId: string) => Promise<void>;
+  toggleThreadFollow: (threadId: string) => Promise<void>;
+  incrementThreadView: (threadId: string) => Promise<void>;
+  addThreadReply: (threadId: string, body: string, parentReplyId?: string) => Promise<void>;
+  toggleReplyLike: (threadId: string, replyId: string) => Promise<void>;
+  markThreadSolution: (threadId: string, replyId: string) => Promise<void>;
+  updateThreadStatus: (threadId: string, status: ThreadStatus) => Promise<void>;
+
+  // === Visual Library ===
+  savedVisualMediaIds: string[];
+  toggleSaveVisualMedia: (mediaId: string) => Promise<void>;
+
+  // === Simulation Lab ===
+  simulationSessions: SimulationSession[];
+  logSimulationSession: (session: Omit<SimulationSession, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+
   // Restore payload
   restorePortfolioData: (data: any) => Promise<void>;
 
@@ -171,7 +196,7 @@ const OFFLINE_QUEUE_KEY = 'surgitrack_offline_queue_';
 
 interface OfflineQueueItem {
   id: string;
-  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill';
+  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill' | 'thread' | 'simulation_session';
   action: 'create' | 'update' | 'delete';
   data?: any;
   parentId?: string;
@@ -203,6 +228,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firestoreQuotaExceeded, setFirestoreQuotaExceeded] = useState<boolean>(false);
   const dismissQuotaWarning = () => setFirestoreQuotaExceeded(false);
   const [rawDoctors, setAllDoctors] = useState<DoctorProfileSummary[]>([]);
+  const [threads, setThreads] = useState<CommunityThread[]>([]);
+  const [threadReplies, setThreadReplies] = useState<Record<string, ThreadReply[]>>({});
+  const [savedVisualMediaIds, setSavedVisualMediaIds] = useState<string[]>([]);
+  const [simulationSessions, setSimulationSessions] = useState<SimulationSession[]>([]);
 
   // Real-time Notification Dispatcher (supports deterministic IDs to guarantee idempotency / zero duplicates)
   const dispatchNotification = async (
@@ -315,6 +344,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             await setDoc(doc(db, 'users', syncUid, 'skills', item.id), cleanPayload(item.data), { merge: true });
           }
+        } else if (item.type === 'thread') {
+          await setDoc(doc(db, 'communityThreads', item.id), cleanPayload(item.data), { merge: true });
+        } else if (item.type === 'simulation_session') {
+          await setDoc(doc(db, 'users', syncUid, 'simulationSessions', item.id), cleanPayload(item.data), { merge: true });
         }
       } catch (err: any) {
         if (isFirestoreQuotaError(err)) {
@@ -579,6 +612,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setRecommendations(loadedRecs);
       setSavedArticles(loadedArticles);
     }
+    setSimulationSessions(loadLocal<SimulationSession[]>('simulation_sessions', []));
+    setSavedVisualMediaIds(
+      Array.isArray(profile?.savedVisualMedia)
+        ? profile.savedVisualMedia
+        : loadLocal<string[]>('saved_visual_media', [])
+    );
+    try {
+      const cachedThreads = localStorage.getItem('surgitrack_local_threads');
+      if (cachedThreads) {
+        const parsed = JSON.parse(cachedThreads);
+        if (Array.isArray(parsed)) setThreads(parsed);
+      }
+    } catch {}
 
     // Community cases local cache initialization (no mock fallback)
     try {
@@ -1054,6 +1100,89 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       recordUnsubs.clear();
     };
   }, [myUidsKey, currentUid]);
+
+  // Keep savedVisualMediaIds synced with loaded user profile
+  useEffect(() => {
+    if (Array.isArray(profile?.savedVisualMedia)) {
+      setSavedVisualMediaIds(profile.savedVisualMedia);
+      saveLocal('saved_visual_media', profile.savedVisualMedia);
+    }
+  }, [profile?.savedVisualMedia]);
+
+  // Real-time Community Threads listener (requires signed-in session; uses deletedByAdmin == false filter)
+  useEffect(() => {
+    if (!user?.uid) return;
+    let unsubThreads: (() => void) | undefined;
+    let isMounted = true;
+    try {
+      const threadsQuery = query(
+        collection(db, 'communityThreads'),
+        where('deletedByAdmin', '==', false),
+        limit(50)
+      );
+      unsubThreads = onSnapshot(
+        threadsQuery,
+        (snap) => {
+          if (!isMounted) return;
+          const loaded = snap.docs
+            .map(d => ({ ...d.data(), id: d.id }) as CommunityThread)
+            .filter(t => !t.deletedByAdmin);
+          loaded.sort((a, b) => {
+            if (a.pinnedAt && !b.pinnedAt) return -1;
+            if (!a.pinnedAt && b.pinnedAt) return 1;
+            const aTime = getTimestampMs(a.lastActivityAtServer || a.lastActivityAt || a.createdAt);
+            const bTime = getTimestampMs(b.lastActivityAtServer || b.lastActivityAt || b.createdAt);
+            return bTime - aTime;
+          });
+          setThreads(loaded);
+          safeSetLocalStorage('surgitrack_local_threads', loaded.slice(0, 30));
+        },
+        (err) => {
+          if (isFirestoreQuotaError(err)) setFirestoreQuotaExceeded(true);
+          else console.warn('Threads listener:', err.message);
+        }
+      );
+    } catch (e) {
+      console.warn('Threads init error:', e);
+    }
+    return () => {
+      isMounted = false;
+      if (unsubThreads) unsubThreads();
+    };
+  }, [user?.uid]);
+
+  // User simulation sessions real-time listener
+  useEffect(() => {
+    if (!user?.uid || !currentUid || currentUid === 'local-surgeon-001') return;
+    let unsubSessions: (() => void) | undefined;
+    let isMounted = true;
+    try {
+      const sessionsQuery = query(
+        collection(db, 'users', currentUid, 'simulationSessions'),
+        orderBy('createdAt', 'desc'),
+        limit(100)
+      );
+      unsubSessions = onSnapshot(
+        sessionsQuery,
+        (snap) => {
+          if (!isMounted) return;
+          const loaded = snap.docs.map(d => ({ ...d.data(), id: d.id }) as SimulationSession);
+          setSimulationSessions(loaded);
+          saveLocal('simulation_sessions', loaded);
+        },
+        (err) => {
+          if (isFirestoreQuotaError(err)) setFirestoreQuotaExceeded(true);
+          else console.warn('Simulation sessions listener:', err.message);
+        }
+      );
+    } catch (e) {
+      console.warn('Sessions listener error:', e);
+    }
+    return () => {
+      isMounted = false;
+      if (unsubSessions) unsubSessions();
+    };
+  }, [user?.uid, currentUid]);
 
   const loadMoreCommunityCases = () => {
     if (loadingMoreCommunity) return;
@@ -2926,6 +3055,396 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return savedArticles.some(a => a.id === articleId);
   };
 
+  // === Community Threads Handlers ===
+  const fetchThreadReplies = async (threadId: string) => {
+    if (!threadId) return;
+    if (!user?.uid || currentUid === 'local-surgeon-001') {
+      try {
+        const stored = localStorage.getItem(`surgitrack_thread_replies_${threadId}`);
+        if (stored) {
+          setThreadReplies(prev => ({ ...prev, [threadId]: JSON.parse(stored) }));
+        }
+      } catch {}
+      return;
+    }
+    try {
+      const repliesQuery = query(
+        collection(db, 'communityThreads', threadId, 'replies'),
+        where('deletedByAdmin', '==', false),
+        limit(100)
+      );
+      const snap = await getDocs(repliesQuery);
+      const replies = snap.docs
+        .map(d => ({ ...d.data(), id: d.id }) as ThreadReply)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      setThreadReplies(prev => ({ ...prev, [threadId]: replies }));
+    } catch (e: any) {
+      if (isFirestoreQuotaError(e)) setFirestoreQuotaExceeded(true);
+      else console.warn('fetchThreadReplies error:', e?.message || e);
+    }
+  };
+
+  const createThread = async (
+    data: Omit<CommunityThread, 'id' | 'createdAt' | 'updatedAt' | 'viewsCount' | 'repliesCount' | 'likesCount' | 'viewedByUserIds' | 'likedByUserIds' | 'followers'>
+  ) => {
+    const now = new Date().toISOString();
+    const isLocalOnly = !user?.uid || currentUid === 'local-surgeon-001';
+    const threadId = `${isLocalOnly ? 'local_' : ''}thread_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    const localThread: CommunityThread = {
+      ...data,
+      id: threadId,
+      authorId: currentUid,
+      status: 'open',
+      deletedByAdmin: false,
+      viewsCount: 0,
+      repliesCount: 0,
+      likesCount: 0,
+      viewedByUserIds: [],
+      likedByUserIds: [],
+      followers: [currentUid],
+      lastActivityAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setThreads(prev => {
+      const next = [localThread, ...prev.filter(t => t.id !== threadId)];
+      safeSetLocalStorage('surgitrack_local_threads', next.slice(0, 30));
+      return next;
+    });
+
+    if (isLocalOnly) return;
+
+    const cloudThread: CommunityThread = {
+      ...localThread,
+      createdAtServer: serverTimestamp(),
+      updatedAtServer: serverTimestamp(),
+      lastActivityAtServer: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(doc(db, 'communityThreads', threadId), cleanPayload(cloudThread));
+    } catch (e: any) {
+      if (isFirestoreQuotaError(e)) setFirestoreQuotaExceeded(true);
+      enqueueOfflineAction({
+        id: threadId,
+        type: 'thread',
+        action: 'create',
+        data: cleanPayload(localThread),
+        timestamp: now,
+      });
+    }
+  };
+
+  const toggleThreadLike = async (threadId: string) => {
+    const thread = threads.find(t => t.id === threadId);
+    if (!thread) return;
+    const liked = thread.likedByUserIds?.includes(currentUid) || false;
+    const now = new Date().toISOString();
+
+    setThreads(prev =>
+      prev.map(t =>
+        t.id === threadId
+          ? {
+              ...t,
+              likedByUserIds: liked
+                ? (t.likedByUserIds || []).filter(id => id !== currentUid)
+                : [...(t.likedByUserIds || []), currentUid],
+              likesCount: Math.max(0, (t.likesCount || 0) + (liked ? -1 : 1)),
+              updatedAt: now,
+            }
+          : t
+      )
+    );
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        likedByUserIds: liked ? arrayRemove(currentUid) : arrayUnion(currentUid),
+        likesCount: increment(liked ? -1 : 1),
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.warn('toggleThreadLike error:', e);
+    }
+  };
+
+  const toggleThreadFollow = async (threadId: string) => {
+    const thread = threads.find(t => t.id === threadId);
+    if (!thread) return;
+    const following = thread.followers?.includes(currentUid) || false;
+    const now = new Date().toISOString();
+
+    setThreads(prev =>
+      prev.map(t =>
+        t.id === threadId
+          ? {
+              ...t,
+              followers: following
+                ? (t.followers || []).filter(id => id !== currentUid)
+                : [...(t.followers || []), currentUid],
+              updatedAt: now,
+            }
+          : t
+      )
+    );
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        followers: following ? arrayRemove(currentUid) : arrayUnion(currentUid),
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.warn('toggleThreadFollow error:', e);
+    }
+  };
+
+  const incrementThreadView = async (threadId: string) => {
+    const thread = threads.find(t => t.id === threadId);
+    if (!thread || thread.viewedByUserIds?.includes(currentUid)) return;
+    const now = new Date().toISOString();
+
+    setThreads(prev =>
+      prev.map(t =>
+        t.id === threadId
+          ? {
+              ...t,
+              viewsCount: (t.viewsCount || 0) + 1,
+              viewedByUserIds: [...(t.viewedByUserIds || []), currentUid],
+            }
+          : t
+      )
+    );
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        viewsCount: increment(1),
+        viewedByUserIds: arrayUnion(currentUid),
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.warn('incrementThreadView error:', e);
+    }
+  };
+
+  const addThreadReply = async (threadId: string, body: string, parentReplyId?: string) => {
+    const authorName = profile?.fullName || user?.displayName || 'Surgeon';
+    const replyId = `reply_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+
+    const localReply: ThreadReply = {
+      id: replyId,
+      threadId,
+      authorId: currentUid,
+      authorName,
+      authorDegree: profile?.medicalQualification,
+      authorSpecialty: profile?.specialty,
+      authorPhotoUrl: profile?.profilePhotoUrl,
+      authorPosition: profile?.currentPosition,
+      body,
+      parentReplyId,
+      likedByUserIds: [],
+      likesCount: 0,
+      deletedByAdmin: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setThreadReplies(prev => {
+      const nextList = [...(prev[threadId] || []), localReply];
+      safeSetLocalStorage(`surgitrack_thread_replies_${threadId}`, nextList);
+      return { ...prev, [threadId]: nextList };
+    });
+
+    setThreads(prev =>
+      prev.map(t =>
+        t.id === threadId
+          ? {
+              ...t,
+              repliesCount: (t.repliesCount || 0) + 1,
+              lastActivityAt: now,
+              lastReplyByUserId: currentUid,
+              lastReplyByName: authorName,
+              updatedAt: now,
+            }
+          : t
+      )
+    );
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+
+    try {
+      await setDoc(
+        doc(db, 'communityThreads', threadId, 'replies', replyId),
+        cleanPayload({ ...localReply, createdAtServer: serverTimestamp() })
+      );
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        repliesCount: increment(1),
+        lastActivityAt: now,
+        lastActivityAtServer: serverTimestamp(),
+        lastReplyByUserId: currentUid,
+        lastReplyByName: authorName,
+        updatedAt: now,
+      });
+
+      const thread = threads.find(t => t.id === threadId);
+      if (thread && thread.authorId && thread.authorId !== currentUid) {
+        await dispatchNotification({
+          title: `${authorName} replied to your thread`,
+          message: body.substring(0, 120) + (body.length > 120 ? '…' : ''),
+          category: 'social',
+          type: 'new_comment',
+          senderEmail: profile?.email || user?.email || undefined,
+          senderName: authorName,
+          senderPhotoUrl: profile?.profilePhotoUrl,
+          senderUserId: currentUid,
+          targetUserId: thread.authorId,
+          targetCaseId: threadId,
+          navigationRef: 'community_threads',
+          status: 'unread',
+        });
+      }
+    } catch (e) {
+      console.error('addThreadReply error:', e);
+    }
+  };
+
+  const toggleReplyLike = async (threadId: string, replyId: string) => {
+    const replies = threadReplies[threadId] || [];
+    const reply = replies.find(r => r.id === replyId);
+    if (!reply) return;
+    const liked = reply.likedByUserIds?.includes(currentUid) || false;
+    const now = new Date().toISOString();
+
+    setThreadReplies(prev => ({
+      ...prev,
+      [threadId]: (prev[threadId] || []).map(r =>
+        r.id === replyId
+          ? {
+              ...r,
+              likedByUserIds: liked
+                ? (r.likedByUserIds || []).filter(id => id !== currentUid)
+                : [...(r.likedByUserIds || []), currentUid],
+              likesCount: Math.max(0, (r.likesCount || 0) + (liked ? -1 : 1)),
+              updatedAt: now,
+            }
+          : r
+      ),
+    }));
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId, 'replies', replyId), {
+        likedByUserIds: liked ? arrayRemove(currentUid) : arrayUnion(currentUid),
+        likesCount: increment(liked ? -1 : 1),
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.warn('toggleReplyLike error:', e);
+    }
+  };
+
+  const markThreadSolution = async (threadId: string, replyId: string) => {
+    const now = new Date().toISOString();
+    setThreads(prev =>
+      prev.map(t =>
+        t.id === threadId
+          ? { ...t, acceptedReplyId: replyId, status: 'answered', updatedAt: now }
+          : t
+      )
+    );
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        acceptedReplyId: replyId,
+        status: 'answered',
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.error('markThreadSolution error:', e);
+    }
+  };
+
+  const updateThreadStatus = async (threadId: string, status: ThreadStatus) => {
+    const now = new Date().toISOString();
+    setThreads(prev =>
+      prev.map(t => (t.id === threadId ? { ...t, status, updatedAt: now } : t))
+    );
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'communityThreads', threadId), {
+        status,
+        updatedAt: now,
+      });
+    } catch (e) {
+      console.error('updateThreadStatus error:', e);
+    }
+  };
+
+  // === Visual Library Bookmarking ===
+  const toggleSaveVisualMedia = async (mediaId: string) => {
+    const isSaved = savedVisualMediaIds.includes(mediaId);
+    const updated = isSaved
+      ? savedVisualMediaIds.filter(id => id !== mediaId)
+      : [...savedVisualMediaIds, mediaId];
+
+    setSavedVisualMediaIds(updated);
+    saveLocal('saved_visual_media', updated);
+    patchProfileLocal?.({ savedVisualMedia: updated });
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await updateDoc(doc(db, 'users', currentUid), {
+        savedVisualMedia: isSaved ? arrayRemove(mediaId) : arrayUnion(mediaId),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('toggleSaveVisualMedia error:', e);
+    }
+  };
+
+  // === Simulation Lab Session Logging ===
+  const logSimulationSession = async (
+    session: Omit<SimulationSession, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    const sessionId = `sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const fullSession: SimulationSession = {
+      ...session,
+      id: sessionId,
+      userId: currentUid,
+      traineeId: session.traineeId || currentUid,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setSimulationSessions(prev => {
+      const next = [fullSession, ...prev];
+      saveLocal('simulation_sessions', next);
+      return next;
+    });
+
+    if (!user?.uid || currentUid === 'local-surgeon-001') return;
+    try {
+      await setDoc(
+        doc(db, 'users', currentUid, 'simulationSessions', sessionId),
+        cleanPayload(fullSession)
+      );
+    } catch (e: any) {
+      if (isFirestoreQuotaError(e)) setFirestoreQuotaExceeded(true);
+      enqueueOfflineAction({
+        id: sessionId,
+        type: 'simulation_session',
+        action: 'create',
+        data: cleanPayload(fullSession),
+        timestamp: now,
+      });
+    }
+  };
+
   // Full Restore (local + Firestore persistence)
   const restorePortfolioData = async (data: any) => {
     const targetUid = auth.currentUser?.uid || profile?.userId || currentUid;
@@ -3053,6 +3572,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isArticleSaved,
         restorePortfolioData,
         syncNow,
+        threads,
+        threadReplies,
+        fetchThreadReplies,
+        createThread,
+        toggleThreadLike,
+        toggleThreadFollow,
+        incrementThreadView,
+        addThreadReply,
+        toggleReplyLike,
+        markThreadSolution,
+        updateThreadStatus,
+        savedVisualMediaIds,
+        toggleSaveVisualMedia,
+        simulationSessions,
+        logSimulationSession,
         stats,
       }}
     >
