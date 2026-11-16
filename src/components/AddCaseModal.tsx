@@ -32,6 +32,7 @@ import {
 import { StandardSelectWithOther } from './StandardSelectWithOther';
 import { AiCaseSuggestions } from './AiCaseSuggestions';
 import { compressImageFileToDataUrl, estimateJsonByteSize } from '../lib/imageUtils';
+import { auth, uploadMediaToStorage } from '../lib/firebase';
 
 interface AddCaseModalProps {
   isOpen: boolean;
@@ -54,7 +55,7 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
   supervisorName,
 }) => {
   const { deleteCaseAttachment } = useData();
-  const { language } = useAuth();
+  const { language, profile } = useAuth();
   const isRTL = language === 'ar';
 
   // Generate random anonymous case reference if creating
@@ -293,16 +294,33 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
     if (!pendingUploadFile) return;
     setFormError('');
     try {
-      const processedUrl = await compressImageFileToDataUrl(pendingUploadFile, {
-        maxDimension: 1024,
-        quality: 0.78,
-        maxOutputBytes: 220_000,
-      });
-      if (processedUrl.length > 750_000) {
+      const uid = auth.currentUser?.uid || profile?.userId || '';
+      const isImage = pendingUploadFile.type.startsWith('image/');
+      const isPdf = pendingUploadFile.type === 'application/pdf';
+      if (pendingUploadFile.size > 9.5 * 1024 * 1024) {
         setFormError(
           isRTL
-            ? 'حجم الملف المرفق كبير جداً للحفظ السحابي (الحد الأقصى حوالي 500 كيلوبايت للملف الواحد). يرجى اختيار صورة أو ملف أصغر حجماً.'
-            : 'Attachment exceeds the cloud storage document size limit (~500 KB per file). Please upload an image or a smaller file.'
+            ? 'حجم الملف يتجاوز الحد الأقصى المسموح به للتخزين السحابي (9.5 ميجابايت).'
+            : 'File exceeds the 9.5 MB cloud storage upload limit.'
+        );
+        setShowConsentModal(false);
+        setPendingUploadFile(null);
+        return;
+      }
+      const payloadForUpload: File | string = isImage
+        ? await compressImageFileToDataUrl(pendingUploadFile, {
+            maxDimension: 1280,
+            quality: 0.82,
+            maxOutputBytes: 420_000,
+          })
+        : pendingUploadFile;
+
+      const finalUrl = await uploadMediaToStorage(uid, 'cases', payloadForUpload, 'case_media');
+      if (finalUrl.startsWith('data:') && finalUrl.length > 750_000) {
+        setFormError(
+          isRTL
+            ? 'حجم الملف المرفق كبير جداً للحفظ السحابي (الحد الأقصى حوالي 500 كيلوبايت في وضع عدم الاتصال). يرجى اختيار صورة أو ملف أصغر حجماً.'
+            : 'Attachment exceeds the inline fallback size limit (~500 KB). Please upload a smaller image or enable online storage.'
         );
         setShowConsentModal(false);
         setPendingUploadFile(null);
@@ -311,14 +329,16 @@ export const AddCaseModal: React.FC<AddCaseModalProps> = ({
       const newAtt = {
         id: `att_${Date.now()}`,
         title: pendingUploadFile.name,
-        type: 'operative_photo' as const,
-        url: processedUrl,
+        type: isPdf ? ('document' as const) : ('operative_photo' as const),
+        url: finalUrl,
+        contentType: pendingUploadFile.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+        sizeBytes: pendingUploadFile.size,
         consentConfirmed: true,
         uploadedAt: new Date().toISOString(),
       };
       setAttachments(prev => [...prev, newAtt]);
     } catch (err: any) {
-      setFormError(err?.message || 'Failed to process attached file.');
+      setFormError(err?.message || 'Failed to upload attached file.');
     } finally {
       setShowConsentModal(false);
       setPendingUploadFile(null);

@@ -32,6 +32,8 @@ export interface FocusedCommunityTarget {
 interface SurgicalCommunityViewProps {
   focusedCaseTarget?: FocusedCommunityTarget | null;
   onClearFocusedCase?: () => void;
+  focusedStoryId?: string | null;
+  onClearFocusedStory?: () => void;
   communityTab?: 'cases' | 'threads';
   onChangeCommunityTab?: (tab: 'cases' | 'threads') => void;
   threadsCount?: number;
@@ -41,6 +43,8 @@ interface SurgicalCommunityViewProps {
 export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
   focusedCaseTarget,
   onClearFocusedCase,
+  focusedStoryId,
+  onClearFocusedStory,
   communityTab: controlledTab,
   onChangeCommunityTab,
   threadsCount = 0,
@@ -300,7 +304,11 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
       />
 
       {/* 1.5. Real-Time Surgical Stories & Clinical Pearls */}
-      <SurgicalStoriesBar onSelectDoctorById={handleSelectDoctorById} />
+      <SurgicalStoriesBar
+        onSelectDoctorById={handleSelectDoctorById}
+        focusedStoryId={focusedStoryId}
+        onClearFocusedStory={onClearFocusedStory}
+      />
 
       {/* 2. Feed Tab Switcher & Filter Controls */}
       <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">

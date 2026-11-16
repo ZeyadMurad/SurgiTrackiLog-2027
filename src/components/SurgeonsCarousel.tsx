@@ -194,9 +194,11 @@ export const SurgeonsCarousel: React.FC<SurgeonsCarouselProps> = ({ onSelectDoct
                 <p className="text-[10px] text-teal-800 font-semibold line-clamp-1 w-full mt-0.5">
                   {doc.specialty}
                 </p>
-                <p className="text-[9px] text-slate-400 line-clamp-1 w-full">
-                  {doc.hospital}
-                </p>
+                {doc.hospital && (
+                  <p className="text-[9px] text-slate-400 line-clamp-1 w-full">
+                    {doc.hospital}
+                  </p>
+                )}
 
                 {/* Followers and Published Cases Badges */}
                 {(() => {

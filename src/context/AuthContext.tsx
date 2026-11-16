@@ -620,7 +620,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 3. Backward-compatibility listener for legacy untagged admin broadcasts (excludes private administrative targeted docs)
       const legacyBroadcastQuery = query(
         collection(db, 'notifications'),
-        where('category', 'in', ['general', 'urgent', 'clinical']),
+        where('category', 'in', ['general', 'urgent', 'clinical', 'administrative', 'announcement', 'maintenance', 'update']),
         limit(15)
       );
       unsubs.push(
@@ -1211,6 +1211,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         for (const cDoc of commCasesSnap.docs) {
           await deleteDoc(doc(db, 'communityCases', cDoc.id));
+        }
+        const storiesSnap = await getDocs(
+          query(collection(db, 'communityStories'), where('authorId', '==', targetUserId))
+        );
+        for (const sDoc of storiesSnap.docs) {
+          await deleteDoc(doc(db, 'communityStories', sDoc.id));
         }
       } catch (e) {
         console.warn('Could not clean up community cases for deleted user:', e);

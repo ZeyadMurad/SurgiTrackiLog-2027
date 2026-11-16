@@ -135,6 +135,9 @@ export interface ClinicalCase {
     title: string;
     type: 'clinical_photo' | 'operative_photo' | 'wound_photo' | 'video' | 'document';
     url: string;
+    storagePath?: string;
+    contentType?: string;
+    sizeBytes?: number;
     consentConfirmed: boolean;
     uploadedAt: string;
   }[];
@@ -375,7 +378,7 @@ export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  category: 'general' | 'urgent' | 'clinical' | 'administrative' | 'social';
+  category: 'general' | 'urgent' | 'clinical' | 'administrative' | 'social' | 'announcement' | 'maintenance' | 'update';
   type?: 'new_follower' | 'follow_request' | 'follow_accepted' | 'follow_rejected' | 'new_like' | 'new_comment' | 'new_case' | 'new_story' | 'admin_broadcast';
   senderEmail?: string;
   senderName?: string;
@@ -384,6 +387,7 @@ export interface AppNotification {
   targetUserId?: string;
   targetCaseId?: string;
   targetCaseTitle?: string;
+  targetStoryId?: string;
   navigationRef?: string;
   isBroadcast?: boolean;
   createdAt: string;

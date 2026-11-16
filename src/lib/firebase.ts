@@ -19,6 +19,7 @@ import {
   uploadBytes,
   uploadString,
   getDownloadURL,
+  deleteObject,
 } from 'firebase/storage';
 import firebaseConfigFallback from '../../firebase-applet-config.json';
 
@@ -149,6 +150,23 @@ export async function uploadMediaToStorage(
       return fileOrDataUrl;
     }
     throw err;
+  }
+}
+
+export async function deleteStorageObjectByUrl(urlOrPath?: string): Promise<void> {
+  if (!urlOrPath || !auth.currentUser) return;
+  if (urlOrPath.startsWith('data:')) return;
+  try {
+    if (urlOrPath.startsWith('users/')) {
+      await deleteObject(storageRef(storage, urlOrPath));
+      return;
+    }
+    if (urlOrPath.includes('firebasestorage.googleapis.com') || urlOrPath.includes('storage.googleapis.com')) {
+      const targetRef = storageRef(storage, urlOrPath);
+      await deleteObject(targetRef);
+    }
+  } catch (err) {
+    console.warn('[SurgiTrack Storage] Delete notice:', (err as any)?.message || err);
   }
 }
 

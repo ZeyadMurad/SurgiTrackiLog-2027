@@ -833,6 +833,9 @@
         "category": {
           "type": "string",
           "enum": [
+            "general",
+            "clinical",
+            "administrative",
             "announcement",
             "maintenance",
             "update",
@@ -860,6 +863,13 @@
           "type": "string",
           "maxLength": 128
         },
+        "targetStoryId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "isBroadcast": {
+          "type": "boolean"
+        },
         "targetCaseTitle": {
           "type": "string",
           "maxLength": 300
@@ -871,6 +881,8 @@
         "status": {
           "type": "string",
           "enum": [
+            "unread",
+            "read",
             "pending",
             "accepted",
             "declined",
@@ -1245,33 +1257,43 @@
       "type": "object",
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 160
         },
         "authorId": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 128
         },
         "authorName": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 150
         },
         "authorSpecialty": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 150
         },
         "authorHospital": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 300
         },
         "authorPhotoUrl": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 350000
         },
         "title": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 200
         },
         "content": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 5000
         },
         "category": {
           "type": "string",
           "enum": [
             "clinical_pearl",
+            "operative_tip",
+            "case_update",
             "or_moment",
             "research_note",
             "milestone",
@@ -1279,10 +1301,12 @@
           ]
         },
         "imageUrl": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 750000
         },
         "relatedCaseId": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 160
         },
         "likedByUserIds": {
           "type": "array",

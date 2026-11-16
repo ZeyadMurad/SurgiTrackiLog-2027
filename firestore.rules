@@ -131,12 +131,14 @@ service cloud.firestore {
       return (!('id' in data) || isValidId(data.id))
         && ('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 300)
         && ('message' in data && data.message is string && data.message.size() <= 5000)
+        && (!('category' in data) || (data.category in ['general', 'urgent', 'clinical', 'administrative', 'social', 'announcement', 'maintenance', 'update']))
         && (!('senderUserId' in data) || (data.senderUserId is string && data.senderUserId.size() <= 128))
         && (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128))
         && (!('targetCaseId' in data) || (data.targetCaseId is string && data.targetCaseId.size() <= 128))
+        && (!('targetStoryId' in data) || (data.targetStoryId is string && data.targetStoryId.size() <= 160))
         && (!('isBroadcast' in data) || data.isBroadcast is bool)
         && (!('readByUserIds' in data) || (data.readByUserIds is list && data.readByUserIds.size() <= 5000))
-        && (!('status' in data) || (data.status in ['pending', 'accepted', 'declined', 'rejected']));
+        && (!('status' in data) || (data.status in ['unread', 'read', 'pending', 'accepted', 'declined', 'rejected']));
     }
 
     function isValidCommunityCommentPayload(data) {
@@ -255,7 +257,7 @@ service cloud.firestore {
         && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 350000))
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
         && data.content is string && data.content.size() >= 1 && data.content.size() <= 5000
-        && data.category in ['clinical_pearl', 'or_moment', 'research_note', 'milestone', 'technique']
+        && data.category in ['clinical_pearl', 'operative_tip', 'case_update', 'or_moment', 'research_note', 'milestone', 'technique']
         && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 750000))
         && (!('relatedCaseId' in data) || (data.relatedCaseId is string && data.relatedCaseId.size() <= 160))
         && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
@@ -644,7 +646,7 @@ service cloud.firestore {
         || (
           (!('targetUserId' in resource.data) || resource.data.targetUserId == null || resource.data.targetUserId == '')
           && 'category' in resource.data
-          && resource.data.category in ['general', 'urgent', 'clinical']
+          && resource.data.category in ['general', 'urgent', 'clinical', 'administrative', 'announcement', 'maintenance', 'update']
         )
       );
 
@@ -656,7 +658,7 @@ service cloud.firestore {
         || (
           (!('targetUserId' in resource.data) || resource.data.targetUserId == null || resource.data.targetUserId == '')
           && 'category' in resource.data
-          && resource.data.category in ['general', 'urgent', 'clinical']
+          && resource.data.category in ['general', 'urgent', 'clinical', 'administrative', 'announcement', 'maintenance', 'update']
         )
       );
 
@@ -679,7 +681,7 @@ service cloud.firestore {
               || ('targetUserId' in existing() && existing().targetUserId == request.auth.uid)
               || ('senderUserId' in existing() && existing().senderUserId == request.auth.uid)
               || ('isBroadcast' in existing() && existing().isBroadcast == true)
-              || (!('targetUserId' in existing()) && 'category' in existing() && existing().category in ['general', 'urgent', 'clinical'])
+              || (!('targetUserId' in existing()) && 'category' in existing() && existing().category in ['general', 'urgent', 'clinical', 'administrative', 'announcement', 'maintenance', 'update'])
             )
           )
           || (
@@ -706,11 +708,19 @@ service cloud.firestore {
     }
 
     match /notification_replies/{replyId} {
-      allow get: if isValidId(replyId) && isSignedIn();
-      allow list: if isSignedIn();
+      allow get: if isValidId(replyId) && isSignedIn() && (
+        isSuperAdmin()
+        || ('userId' in resource.data && resource.data.userId == request.auth.uid)
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin()
+        || ('userId' in resource.data && resource.data.userId == request.auth.uid)
+      );
       allow create: if isValidId(replyId)
         && isSignedIn()
-        && ('replyMessage' in incoming() && incoming().replyMessage is string && incoming().replyMessage.size() <= 5000);
+        && ('userId' in incoming() && incoming().userId == request.auth.uid)
+        && ('notificationId' in incoming() && incoming().notificationId is string && incoming().notificationId.size() <= 160)
+        && ('replyMessage' in incoming() && incoming().replyMessage is string && incoming().replyMessage.size() >= 1 && incoming().replyMessage.size() <= 5000);
       allow update, delete: if isSuperAdmin();
     }
 

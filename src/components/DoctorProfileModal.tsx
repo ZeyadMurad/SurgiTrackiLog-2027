@@ -212,9 +212,11 @@ export const DoctorProfileModal: React.FC<DoctorProfileModalProps> = ({
               )}
             </div>
             <p className="text-xs text-teal-800 font-semibold mt-0.5">{liveDoctor.specialty}</p>
-            <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-              <Building size={11} /> {liveDoctor.hospital}
-            </p>
+            {liveDoctor.hospital && (
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                <Building size={11} /> {liveDoctor.hospital}
+              </p>
+            )}
           </div>
         </div>
 
@@ -457,7 +459,7 @@ export const DoctorProfileModal: React.FC<DoctorProfileModalProps> = ({
                               {followerDoc?.fullName || `Colleague (${followerId.substring(0, 8)})`}
                             </h5>
                             <p className="text-[10px] text-teal-800 font-medium">
-                              {followerDoc?.specialty || 'Surgeon'} • {followerDoc?.hospital || 'Hospital'}
+                              {followerDoc?.specialty || 'Surgeon'}{followerDoc?.hospital ? ` • ${followerDoc.hospital}` : ''}
                             </p>
                           </div>
                         </div>
@@ -555,7 +557,7 @@ export const DoctorProfileModal: React.FC<DoctorProfileModalProps> = ({
                               {followedDoc?.fullName || `Colleague (${followedId.substring(0, 8)})`}
                             </h5>
                             <p className="text-[10px] text-teal-800 font-medium">
-                              {followedDoc?.specialty || 'Surgeon'} • {followedDoc?.hospital || 'Hospital'}
+                              {followedDoc?.specialty || 'Surgeon'}{followedDoc?.hospital ? ` • ${followedDoc.hospital}` : ''}
                             </p>
                           </div>
                         </div>

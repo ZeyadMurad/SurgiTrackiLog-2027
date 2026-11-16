@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Plus,
@@ -19,6 +19,8 @@ import { getTimestampMs } from '../lib/firebase';
 
 interface SurgicalStoriesBarProps {
   onSelectDoctorById?: (userId: string) => void;
+  focusedStoryId?: string | null;
+  onClearFocusedStory?: () => void;
 }
 
 const STORY_CATEGORY_LABELS: Record<CommunityStory['category'], { en: string; ar: string }> = {
@@ -28,7 +30,7 @@ const STORY_CATEGORY_LABELS: Record<CommunityStory['category'], { en: string; ar
   milestone: { en: 'Surgical Milestone', ar: 'إنجاز تدريبي' },
 };
 
-export const SurgicalStoriesBar: React.FC<SurgicalStoriesBarProps> = ({ onSelectDoctorById }) => {
+export const SurgicalStoriesBar: React.FC<SurgicalStoriesBarProps> = ({ onSelectDoctorById, focusedStoryId, onClearFocusedStory }) => {
   const { stories, createStory, toggleLikeStory, markStoryViewed, deleteStory } = useData();
   const { profile, user, language, myUids } = useAuth();
   const isRTL = language === 'ar';
@@ -36,6 +38,16 @@ export const SurgicalStoriesBar: React.FC<SurgicalStoriesBarProps> = ({ onSelect
 
   const [showComposer, setShowComposer] = useState(false);
   const [selectedStory, setSelectedStory] = useState<CommunityStory | null>(null);
+
+  useEffect(() => {
+    if (!focusedStoryId) return;
+    const match = stories.find(s => s.id === focusedStoryId);
+    if (match) {
+      setSelectedStory(match);
+      markStoryViewed(match.id);
+      onClearFocusedStory?.();
+    }
+  }, [focusedStoryId, stories]);
 
   // Composer state
   const [title, setTitle] = useState('');

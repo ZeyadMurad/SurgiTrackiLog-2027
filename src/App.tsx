@@ -170,6 +170,7 @@ function SurgiTrackApp() {
   const [showYourPostsModal, setShowYourPostsModal] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [focusedCommunityTarget, setFocusedCommunityTarget] = useState<FocusedCommunityTarget | null>(null);
+  const [focusedStoryId, setFocusedStoryId] = useState<string | null>(null);
   const [dismissedBannerCaseId, setDismissedBannerCaseId] = useState<string | null>(null);
 
   // Notifications Modal State & Reply State
@@ -323,13 +324,16 @@ function SurgiTrackApp() {
   const newCommunityCount = unviewedFollowedCases.length;
   const latestUnseenFollowedCase = unviewedFollowedCases[0] || null;
 
-  const openCommunityView = async (targetCaseId?: string, openComments: boolean = false, navigationRef?: string) => {
+  const openCommunityView = async (targetCaseId?: string, openComments: boolean = false, navigationRef?: string, targetStoryId?: string) => {
     if (navigationRef === 'community_threads') {
       setCommunityTab('threads');
     } else {
       setCommunityTab('cases');
       if (targetCaseId) {
         setFocusedCommunityTarget({ caseId: targetCaseId, openComments });
+      }
+      if (targetStoryId) {
+        setFocusedStoryId(targetStoryId);
       }
     }
     setActiveView('community');
@@ -1168,6 +1172,8 @@ function SurgiTrackApp() {
             <SurgicalCommunityView
               focusedCaseTarget={focusedCommunityTarget}
               onClearFocusedCase={() => setFocusedCommunityTarget(null)}
+              focusedStoryId={focusedStoryId}
+              onClearFocusedStory={() => setFocusedStoryId(null)}
               communityTab={communityTab}
               onChangeCommunityTab={setCommunityTab}
               threadsCount={threads.length}
@@ -1812,7 +1818,7 @@ function SurgiTrackApp() {
                         </div>
 
                         <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                          {new Date(getTimestampMs(notif.createdAtServer || notif.createdAt) || Date.now()).toLocaleDateString()}
+                          {new Date(getTimestampMs(notif.createdAtServer || notif.createdAt) || Date.now()).toLocaleString(language === 'ar' ? 'ar-EG' : language === 'de' ? 'de-DE' : 'en-GB', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
 
@@ -1864,23 +1870,25 @@ function SurgiTrackApp() {
                         </div>
                       )}
 
-                      {/* Social Click Action: Go to Specific Case or Community */}
-                      {(isLike || isComment || isNewCase || isNewFollower) && (
+                      {/* Social Click Action: Go to Specific Case, Story, or Community */}
+                      {(isLike || isComment || isNewCase || isNewFollower || notif.type === 'new_story') && (
                         <div className="pt-1 flex justify-end">
                           <button
                             type="button"
                             onClick={async (e) => {
                               e.stopPropagation();
                               await markNotificationAsRead(notif.id);
-                              await openCommunityView(notif.targetCaseId, notif.type === 'new_comment', notif.navigationRef);
+                              await openCommunityView(notif.targetCaseId, notif.type === 'new_comment', notif.navigationRef, notif.targetStoryId);
                               setNotificationsModalOpen(false);
                             }}
                             className="text-teal-700 font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer"
                           >
                             <span>
-                              {notif.targetCaseId
-                                ? (isRTL ? 'عرض الحالة في المجتمع ←' : 'View in Community →')
-                                : (isRTL ? 'فتح في المجتمع الجراحي ←' : 'View in Community →')}
+                              {notif.targetStoryId
+                                ? (isRTL ? 'عرض القصة السريرية ←' : 'View Story in Community →')
+                                : notif.targetCaseId
+                                  ? (isRTL ? 'عرض الحالة في المجتمع ←' : 'View in Community →')
+                                  : (isRTL ? 'فتح في المجتمع الجراحي ←' : 'View in Community →')}
                             </span>
                           </button>
                         </div>

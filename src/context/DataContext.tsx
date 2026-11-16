@@ -32,6 +32,7 @@ import {
   saveCompactCommunityCache,
   stripLargeInlineData,
   uploadMediaToStorage,
+  deleteStorageObjectByUrl,
 } from '../lib/firebase';
 import { useAuth } from './AuthContext';
 import {
@@ -1974,6 +1975,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const target = verifyCaseOwnership(caseId);
     if (!target) return;
 
+    const removedAtt = (target.attachments || []).find(a => a.id === attachmentId);
     const updatedAttachments = (target.attachments || []).filter(a => a.id !== attachmentId);
     const updatedCase: ClinicalCase = {
       ...target,
@@ -1989,7 +1991,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCommunityCases(updatedCommunity);
     saveCompactCommunityCache(updatedCommunity);
 
-    if (currentUid && currentUid !== 'local-surgeon-001') {
+    const effectiveUid = auth.currentUser?.uid || profile?.userId || target.userId || currentUid;
+    if (removedAtt?.storagePath || removedAtt?.url) {
+      await deleteStorageObjectByUrl(removedAtt.storagePath || removedAtt.url).catch(() => {});
+    }
+
+    if (effectiveUid && effectiveUid !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({
           id: caseId,
@@ -2000,7 +2007,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'clinicalCases', caseId), { attachments: updatedAttachments }, { merge: true });
+          await setDoc(doc(db, 'users', effectiveUid, 'clinicalCases', caseId), { attachments: updatedAttachments }, { merge: true });
           if (communityCases.some(c => c.id === caseId)) {
             await setDoc(doc(db, 'communityCases', caseId), { attachments: updatedAttachments }, { merge: true });
           }
@@ -2680,7 +2687,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       message: `${profile?.fullName || 'The surgeon'} declined your follow request.`,
       category: 'social',
       type: 'follow_rejected',
-      senderUserId: currentUid,
+      senderUserId: (auth.currentUser?.uid || profile?.userId || currentUid),
       senderName: profile?.fullName || 'Colleague Surgeon',
       senderPhotoUrl: profile?.profilePhotoUrl || '',
       targetUserId: requesterId,
@@ -2693,7 +2700,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newSup: Supervisor = cleanPayload({
       ...s,
       id,
-      userId: currentUid,
+      userId: (auth.currentUser?.uid || profile?.userId || currentUid),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -2702,12 +2709,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSupervisors(updated);
     saveLocal('supervisors', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'supervisor', action: 'create', data: newSup, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'supervisors', id), newSup);
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', id), newSup);
         } catch (err) {
           console.warn('Saved supervisor locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'supervisor', action: 'create', data: newSup, timestamp: new Date().toISOString() });
@@ -2723,12 +2730,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSupervisors(updated);
     saveLocal('supervisors', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'supervisor', action: 'update', data: patch, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'supervisors', id), patch, { merge: true });
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', id), patch, { merge: true });
         } catch (err) {
           console.warn('Updated supervisor locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'supervisor', action: 'update', data: patch, timestamp: new Date().toISOString() });
@@ -2748,17 +2755,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingRecords(remainingRecords);
     saveLocal('records', remainingRecords);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'supervisor', action: 'delete', timestamp: new Date().toISOString() });
       } else {
         try {
           for (const rec of removedRecords) {
             try {
-              await deleteDoc(doc(db, 'users', currentUid, 'supervisors', id, 'trainingRecords', rec.id));
+              await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', id, 'trainingRecords', rec.id));
             } catch { /* ignore */ }
           }
-          await deleteDoc(doc(db, 'users', currentUid, 'supervisors', id));
+          await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', id));
         } catch (err) {
           console.warn('Deleted supervisor locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'supervisor', action: 'delete', timestamp: new Date().toISOString() });
@@ -2773,7 +2780,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newRec: TrainingRecord = cleanPayload({
       ...r,
       id,
-      userId: currentUid,
+      userId: (auth.currentUser?.uid || profile?.userId || currentUid),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -2782,12 +2789,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingRecords(updated);
     saveLocal('records', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'record', action: 'create', parentId: r.supervisorId, data: newRec, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'supervisors', r.supervisorId, 'trainingRecords', id), newRec);
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', r.supervisorId, 'trainingRecords', id), newRec);
         } catch (err) {
           console.warn('Saved training record locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'record', action: 'create', parentId: r.supervisorId, data: newRec, timestamp: new Date().toISOString() });
@@ -2810,12 +2817,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingRecords(updated);
     saveLocal('records', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'record', action: 'update', parentId: supervisorId, data: patch, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'supervisors', supervisorId, 'trainingRecords', id), patch, { merge: true });
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', supervisorId, 'trainingRecords', id), patch, { merge: true });
         } catch (err) {
           console.warn('Updated record locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'record', action: 'update', parentId: supervisorId, data: patch, timestamp: new Date().toISOString() });
@@ -2836,12 +2843,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingRecords(updated);
     saveLocal('records', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'record', action: 'delete', parentId: supervisorId, timestamp: new Date().toISOString() });
       } else {
         try {
-          await deleteDoc(doc(db, 'users', currentUid, 'supervisors', supervisorId, 'trainingRecords', id));
+          await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', supervisorId, 'trainingRecords', id));
         } catch (err) {
           console.warn('Deleted record locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'record', action: 'delete', parentId: supervisorId, timestamp: new Date().toISOString() });
@@ -2930,12 +2937,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setTrainingRecords(updated);
       saveLocal('records', updated);
 
-      if (currentUid !== 'local-surgeon-001') {
+      if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
         if (!navigator.onLine) {
           enqueueOfflineAction({ id: recordId, type: 'record', action: 'update', parentId: record.supervisorId, data: patched, timestamp: signedAt });
         } else {
           try {
-            await setDoc(doc(db, 'users', currentUid, 'supervisors', record.supervisorId, 'trainingRecords', recordId), patched, { merge: true });
+            await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'supervisors', record.supervisorId, 'trainingRecords', recordId), patched, { merge: true });
           } catch (err) {
             console.warn('Signed record locally, queued for sync:', err);
             enqueueOfflineAction({ id: recordId, type: 'record', action: 'update', parentId: record.supervisorId, data: patched, timestamp: signedAt });
@@ -2966,7 +2973,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newSess: TrainingSession = cleanPayload({
       ...s,
       id,
-      userId: currentUid,
+      userId: (auth.currentUser?.uid || profile?.userId || currentUid),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -2975,12 +2982,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingSessions(updated);
     saveLocal('sessions', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'session', action: 'create', data: newSess, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'trainingSessions', id), newSess);
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'trainingSessions', id), newSess);
         } catch (err) {
           console.warn('Saved session locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'session', action: 'create', data: newSess, timestamp: new Date().toISOString() });
@@ -2996,12 +3003,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingSessions(updated);
     saveLocal('sessions', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'session', action: 'update', data: patch, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'trainingSessions', id), patch, { merge: true });
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'trainingSessions', id), patch, { merge: true });
         } catch (err) {
           console.warn('Updated session locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'session', action: 'update', data: patch, timestamp: new Date().toISOString() });
@@ -3015,12 +3022,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrainingSessions(updated);
     saveLocal('sessions', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'session', action: 'delete', timestamp: new Date().toISOString() });
       } else {
         try {
-          await deleteDoc(doc(db, 'users', currentUid, 'trainingSessions', id));
+          await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'trainingSessions', id));
         } catch (err) {
           console.warn('Deleted session locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'session', action: 'delete', timestamp: new Date().toISOString() });
@@ -3035,7 +3042,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newSkill: UserSkill = cleanPayload({
       ...s,
       id,
-      userId: currentUid,
+      userId: (auth.currentUser?.uid || profile?.userId || currentUid),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -3044,12 +3051,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSkills(updated);
     saveLocal('skills', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'skill', action: 'create', data: newSkill, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'skills', id), newSkill);
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'skills', id), newSkill);
         } catch (err) {
           console.warn('Saved skill locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'skill', action: 'create', data: newSkill, timestamp: new Date().toISOString() });
@@ -3065,12 +3072,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSkills(updated);
     saveLocal('skills', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'skill', action: 'update', data: patch, timestamp: new Date().toISOString() });
       } else {
         try {
-          await setDoc(doc(db, 'users', currentUid, 'skills', id), patch, { merge: true });
+          await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'skills', id), patch, { merge: true });
         } catch (err) {
           console.warn('Updated skill locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'skill', action: 'update', data: patch, timestamp: new Date().toISOString() });
@@ -3084,12 +3091,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSkills(updated);
     saveLocal('skills', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       if (!navigator.onLine) {
         enqueueOfflineAction({ id, type: 'skill', action: 'delete', timestamp: new Date().toISOString() });
       } else {
         try {
-          await deleteDoc(doc(db, 'users', currentUid, 'skills', id));
+          await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'skills', id));
         } catch (err) {
           console.warn('Deleted skill locally, queued for sync:', err);
           enqueueOfflineAction({ id, type: 'skill', action: 'delete', timestamp: new Date().toISOString() });
@@ -3104,7 +3111,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newRec: RecommendationLetter = cleanPayload({
       ...r,
       id,
-      userId: currentUid,
+      userId: (auth.currentUser?.uid || profile?.userId || currentUid),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -3113,9 +3120,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecommendations(updated);
     saveLocal('recommendations', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       try {
-        await setDoc(doc(db, 'users', currentUid, 'recommendations', id), newRec);
+        await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'recommendations', id), newRec);
       } catch (err) {
         console.warn('Saved recommendation locally:', err);
       }
@@ -3128,9 +3135,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecommendations(updated);
     saveLocal('recommendations', updated);
 
-    if (currentUid !== 'local-surgeon-001') {
+    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
       try {
-        await deleteDoc(doc(db, 'users', currentUid, 'recommendations', id));
+        await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'recommendations', id));
       } catch (err) {
         console.warn('Deleted recommendation locally:', err);
       }
@@ -3143,7 +3150,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let updated: SavedArticle[];
     if (existing) {
       updated = savedArticles.filter(a => a.id !== article.id);
-      if (currentUid !== 'local-surgeon-001' && navigator.onLine) {
+      if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001' && navigator.onLine) {
         for (const uid of myUids) {
           if (uid === 'local-surgeon-001') continue;
           await deleteDoc(doc(db, 'users', uid, 'savedArticles', article.id)).catch(() => {});
@@ -3152,12 +3159,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       const newArticle: SavedArticle = cleanPayload({
         ...article,
-        userId: currentUid,
+        userId: (auth.currentUser?.uid || profile?.userId || currentUid),
         savedAt: new Date().toISOString(),
       });
       updated = [newArticle, ...savedArticles];
-      if (currentUid !== 'local-surgeon-001' && navigator.onLine) {
-        await setDoc(doc(db, 'users', currentUid, 'savedArticles', article.id), newArticle, { merge: true }).catch(() => {});
+      if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001' && navigator.onLine) {
+        await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'savedArticles', article.id), newArticle, { merge: true }).catch(() => {});
       }
     }
     setSavedArticles(updated);
@@ -3622,7 +3629,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             senderName: localStory.authorName,
             senderPhotoUrl: localStory.authorPhotoUrl || '',
             targetUserId: recipientUid,
-            targetCaseId: storyId,
+            targetStoryId: storyId,
             navigationRef: '/community',
           },
           `notif_story_${storyId}_${recipientUid}`
