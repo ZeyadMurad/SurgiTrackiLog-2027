@@ -269,23 +269,7 @@ function SurgiTrackApp() {
     return <AuthView />;
   }
 
-  // Feature 2 & 4: Strict Email Verification Guard
-  // Unverified accounts are strictly blocked from accessing the surgical portfolio,
-  // logbook, community, and exports until email verification link is clicked.
-  const isSuperAdminAccount =
-    user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
-    profile?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
-    profile?.role === 'super_admin';
-  const isAccountVerified = isSuperAdminAccount || (profile ? Boolean(profile.emailVerified) : false);
-
-  if (!isAccountVerified) {
-    return (
-      <AuthView
-        initialMode="verification_pending"
-        initialEmail={user?.email || profile?.email || ''}
-      />
-    );
-  }
+  // Direct immediate access once authenticated (no email verification lock)
 
   const myPostsCount = communityCases.filter(c => matchDoctorCase(c, {
     userId: profile?.userId,
@@ -339,9 +323,14 @@ function SurgiTrackApp() {
   const newCommunityCount = unviewedFollowedCases.length;
   const latestUnseenFollowedCase = unviewedFollowedCases[0] || null;
 
-  const openCommunityView = async (targetCaseId?: string, openComments: boolean = false) => {
-    if (targetCaseId) {
-      setFocusedCommunityTarget({ caseId: targetCaseId, openComments });
+  const openCommunityView = async (targetCaseId?: string, openComments: boolean = false, navigationRef?: string) => {
+    if (navigationRef === 'community_threads') {
+      setCommunityTab('threads');
+    } else {
+      setCommunityTab('cases');
+      if (targetCaseId) {
+        setFocusedCommunityTarget({ caseId: targetCaseId, openComments });
+      }
     }
     setActiveView('community');
     setMobileMenuOpen(false);
@@ -1772,7 +1761,7 @@ function SurgiTrackApp() {
                   const isNewFollower = notif.type === 'new_follower' || notif.type === 'follow_accepted';
                   const isLike = notif.type === 'new_like';
                   const isComment = notif.type === 'new_comment';
-                  const isNewCase = notif.type === 'new_case';
+                  const isNewCase = notif.type === 'new_case' || notif.type === 'new_story';
 
                   return (
                     <div
@@ -1883,7 +1872,7 @@ function SurgiTrackApp() {
                             onClick={async (e) => {
                               e.stopPropagation();
                               await markNotificationAsRead(notif.id);
-                              await openCommunityView(notif.targetCaseId, notif.type === 'new_comment');
+                              await openCommunityView(notif.targetCaseId, notif.type === 'new_comment', notif.navigationRef);
                               setNotificationsModalOpen(false);
                             }}
                             className="text-teal-700 font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer"

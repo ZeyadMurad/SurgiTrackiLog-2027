@@ -11,7 +11,7 @@ interface SurgeonsCarouselProps {
 }
 
 export const SurgeonsCarousel: React.FC<SurgeonsCarouselProps> = ({ onSelectDoctor }) => {
-  const { allDoctors, toggleFollowDoctor, communityCases } = useData();
+  const { allDoctors, toggleFollowDoctor, communityCases, hasMoreDoctors, loadingMoreDoctors, loadMoreDoctors } = useData();
   const { profile, user, language, myUids: authUids } = useAuth();
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
@@ -256,6 +256,21 @@ export const SurgeonsCarousel: React.FC<SurgeonsCarouselProps> = ({ onSelectDoct
               </div>
             );
           })}
+          {hasMoreDoctors && (
+            <button
+              type="button"
+              onClick={loadMoreDoctors}
+              disabled={loadingMoreDoctors}
+              className="shrink-0 w-36 bg-teal-50/70 hover:bg-teal-100/80 border border-dashed border-teal-300 rounded-2xl p-3 flex flex-col items-center justify-center text-center gap-1.5 transition cursor-pointer disabled:opacity-60"
+            >
+              <span className="text-xs font-bold text-teal-800">
+                {loadingMoreDoctors ? (isRTL ? 'جارٍ التحميل...' : 'Loading...') : (isRTL ? 'عرض المزيد' : 'Load More')}
+              </span>
+              <span className="text-[10px] text-teal-700">
+                {isRTL ? 'أطباء وجراحون' : 'Surgeons'}
+              </span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">

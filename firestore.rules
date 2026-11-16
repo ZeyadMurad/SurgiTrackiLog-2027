@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global safety net
+    // Global safety net: deny anything not explicitly permitted
     match /{document=**} {
       allow read, write: if false;
     }
@@ -23,26 +23,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // SECURITY FIX: the old `!isSignedIn()` escape hatch granted OWNER-level access
-    // to every anonymous request. Anonymous access is now confined to the guest
-    // namespace only (documents whose id / owner uid matches ^usr_.*), so that
-    // unauthenticated callers can never read or mutate real (Firebase-auth) users' data.
-    function isGuestNamespace(id) {
-      return id is string && id.matches('^usr_.*');
-    }
-
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Guest/local session owner: an unsigned request may only touch guest documents.
-    function isGuestOrSignedOwner(userId) {
-      return isOwner(userId) || (request.auth == null && isGuestNamespace(userId));
-    }
-
+    // Matches the signed-in Firebase Auth email against doc.email (compatible with email/password + Google Auth;
+    // no email_verified gate since immediate activation without email verification is enforced).
     function isEmailOwner(docData) {
       return isSignedIn()
-        && request.auth.token.email_verified == true
         && request.auth.token.email is string
         && docData != null
         && ('email' in docData)
@@ -52,9 +40,18 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn()
-        && request.auth.token.email_verified == true
-        && request.auth.token.email is string
-        && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com';
+        && (
+          (
+            request.auth.token.email is string
+            && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com'
+          )
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email is string
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email.lower() == 'zeadmorud2030@gmail.com'
+          )
+        );
     }
 
     function isCommunityCaseOwner(caseData) {
@@ -66,8 +63,7 @@ service cloud.firestore {
           && caseData.userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.aliasIds
         )
         || (
-          request.auth.token.email_verified == true
-          && 'authorEmail' in caseData
+          'authorEmail' in caseData
           && caseData.authorEmail is string
           && request.auth.token.email is string
           && caseData.authorEmail.lower() == request.auth.token.email.lower()
@@ -78,7 +74,6 @@ service cloud.firestore {
     function isUserOrAliasOwner(userId) {
       return isOwner(userId)
         || isSuperAdmin()
-        || (request.auth == null && isGuestNamespace(userId))
         || (
           isSignedIn()
           && exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -102,7 +97,18 @@ service cloud.firestore {
         && (!('verifiedHours' in data) || (data.verifiedHours is number && data.verifiedHours >= 0))
         && (!('verifiedProcedures' in data) || (data.verifiedProcedures is number && data.verifiedProcedures >= 0))
         && (!('savedVisualMedia' in data) || (data.savedVisualMedia is list && data.savedVisualMedia.size() <= 500))
-        && (!('role' in data) || data.role != 'super_admin' || (('email' in data) && data.email == 'zeadmorud2030@gmail.com'));
+        && (
+          !('role' in data)
+          || data.role != 'super_admin'
+          || (
+            ('email' in data)
+            && data.email is string
+            && data.email.lower() == 'zeadmorud2030@gmail.com'
+            && isSignedIn()
+            && request.auth.token.email is string
+            && request.auth.token.email.lower() == 'zeadmorud2030@gmail.com'
+          )
+        );
     }
 
     function isValidClinicalCasePayload(data) {
@@ -128,6 +134,7 @@ service cloud.firestore {
         && (!('senderUserId' in data) || (data.senderUserId is string && data.senderUserId.size() <= 128))
         && (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128))
         && (!('targetCaseId' in data) || (data.targetCaseId is string && data.targetCaseId.size() <= 128))
+        && (!('isBroadcast' in data) || data.isBroadcast is bool)
         && (!('readByUserIds' in data) || (data.readByUserIds is list && data.readByUserIds.size() <= 5000))
         && (!('status' in data) || (data.status in ['pending', 'accepted', 'declined', 'rejected']));
     }
@@ -142,7 +149,7 @@ service cloud.firestore {
         && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
         && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 150
         && (!('userSpecialty' in data) || (data.userSpecialty is string && data.userSpecialty.size() <= 150))
-        && (!('userPhotoUrl' in data) || (data.userPhotoUrl is string && data.userPhotoUrl.size() <= 2048))
+        && (!('userPhotoUrl' in data) || (data.userPhotoUrl is string && data.userPhotoUrl.size() <= 350000))
         && data.commentText is string && data.commentText.size() >= 1 && data.commentText.size() <= 5000
         && data.createdAt is string && data.createdAt.size() <= 64
         && (!('createdAtServer' in data) || data.createdAtServer == request.time);
@@ -157,7 +164,7 @@ service cloud.firestore {
         && isValidId(data.caseId)
         && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 150
         && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 150))
-        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 2048))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 350000))
         && data.createdAt is string && data.createdAt.size() <= 64
         && (!('createdAtServer' in data) || data.createdAtServer == request.time);
     }
@@ -178,7 +185,7 @@ service cloud.firestore {
         && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
         && (!('authorDegree' in data) || (data.authorDegree is string && data.authorDegree.size() <= 120))
         && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
-        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 2048))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 350000))
         && (!('authorPosition' in data) || (data.authorPosition is string && data.authorPosition.size() <= 150))
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 300
         && data.body is string && data.body.size() >= 1 && data.body.size() <= 30000
@@ -219,12 +226,42 @@ service cloud.firestore {
         && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
         && (!('authorDegree' in data) || (data.authorDegree is string && data.authorDegree.size() <= 120))
         && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
-        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 2048))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 350000))
         && (!('authorPosition' in data) || (data.authorPosition is string && data.authorPosition.size() <= 150))
         && data.body is string && data.body.size() >= 1 && data.body.size() <= 15000
         && (!('parentReplyId' in data) || (data.parentReplyId is string && data.parentReplyId.size() <= 160))
         && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
         && (!('likesCount' in data) || (data.likesCount is number && data.likesCount >= 0))
+        && (!('deletedByAdmin' in data) || data.deletedByAdmin is bool)
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCommunityStoryPayload(data) {
+      return data.keys().hasAll([
+          'id', 'authorId', 'authorName', 'title', 'content', 'category', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'authorId', 'authorName', 'authorSpecialty', 'authorHospital', 'authorPhotoUrl',
+          'title', 'content', 'category', 'imageUrl', 'relatedCaseId',
+          'likedByUserIds', 'likesCount', 'viewedByUserIds', 'viewsCount', 'deletedByAdmin',
+          'createdAt', 'createdAtServer', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
+        && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
+        && (!('authorHospital' in data) || (data.authorHospital is string && data.authorHospital.size() <= 300))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 350000))
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 5000
+        && data.category in ['clinical_pearl', 'or_moment', 'research_note', 'milestone', 'technique']
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 750000))
+        && (!('relatedCaseId' in data) || (data.relatedCaseId is string && data.relatedCaseId.size() <= 160))
+        && (!('likedByUserIds' in data) || (data.likedByUserIds is list && data.likedByUserIds.size() <= 5000))
+        && (!('likesCount' in data) || (data.likesCount is number && data.likesCount >= 0))
+        && (!('viewedByUserIds' in data) || (data.viewedByUserIds is list && data.viewedByUserIds.size() <= 5000))
+        && (!('viewsCount' in data) || (data.viewsCount is number && data.viewsCount >= 0))
         && (!('deletedByAdmin' in data) || data.deletedByAdmin is bool)
         && data.createdAt is string && data.createdAt.size() <= 64
         && data.updatedAt is string && data.updatedAt.size() <= 64;
@@ -269,54 +306,50 @@ service cloud.firestore {
         && (!('viewedAtServer' in data) || data.viewedAtServer == request.time);
     }
 
-    // User profiles & surgeon discovery directory
+    // User profiles & surgeon discovery directory (authenticated directory discovery; owner/admin writes)
     match /users/{userId} {
-      allow get: if isValidId(userId);
-      // SECURITY FIX: directory listing required sign-in — previously `allow list: if true`
-      // exposed every doctor's profile (email, hospital, bio, followers) to anonymous scrapers.
+      allow get: if isValidId(userId) && isSignedIn();
       allow list: if isSignedIn();
 
       allow create: if isValidId(userId)
+        && isSignedIn()
         && isValidUserPayload(incoming())
         && ('userId' in incoming()) && incoming().userId == userId
-        // SECURITY FIX: anonymous creation is now restricted to the guest ^usr_ namespace;
-        // real (Firebase-auth) profiles must be written by their signed-in owner.
-        && (isGuestOrSignedOwner(userId) || isEmailOwner(incoming()) || isSuperAdmin());
+        && (isOwner(userId) || isEmailOwner(incoming()) || isSuperAdmin());
 
       allow update: if isValidId(userId)
+        && isSignedIn()
         && isValidUserPayload(incoming())
         && (!('userId' in existing()) || incoming().userId == existing().userId)
         && (
           // Relationship / follow-request atomic sync update (follow, unfollow, accept, decline)
-          // SECURITY FIX: requires an authenticated session — anonymous requests can no longer
-          // forge followers/pendingFollowRequests on other users' profiles.
-          (
-            isSignedIn()
-            && incoming().diff(existing()).affectedKeys().hasOnly([
-              'followers', 'followersCount', 'following', 'followingCount', 'pendingFollowRequests', 'updatedAt'
-            ])
-          )
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'followers', 'followersCount', 'following', 'followingCount', 'pendingFollowRequests', 'updatedAt'
+          ])
           || (
-            // Profile / metrics / verification / alias updates require owner, verified-email sibling owner, super admin,
-            // or a guest-namespace session updating its own ^usr_ document.
             (!('role' in existing()) || incoming().role == existing().role || isSuperAdmin())
-            && (isGuestOrSignedOwner(userId) || isEmailOwner(existing()) || isSuperAdmin())
+            && (isOwner(userId) || isEmailOwner(existing()) || isSuperAdmin())
           )
         );
 
-      allow delete: if isValidId(userId) && (
-        isOwner(userId)
-        || isEmailOwner(existing())
-        || isSuperAdmin()
-        || (!isSignedIn() && userId.matches('^usr_.*'))
-      );
+      allow delete: if isValidId(userId)
+        && isSignedIn()
+        && (isOwner(userId) || isEmailOwner(existing()) || isSuperAdmin());
 
       match /clinicalCases/{caseId} {
         allow get, create, update, delete: if isValidId(userId) && isValidId(caseId)
           && isUserOrAliasOwner(userId);
         allow list: if isValidId(userId)
-          && (isUserOrAliasOwner(userId)
-            || (isSignedIn() && request.auth.token.email_verified == true && 'authorEmail' in resource.data && resource.data.authorEmail is string && resource.data.authorEmail.lower() == request.auth.token.email.lower()));
+          && (
+            isUserOrAliasOwner(userId)
+            || (
+              isSignedIn()
+              && request.auth.token.email is string
+              && 'authorEmail' in resource.data
+              && resource.data.authorEmail is string
+              && resource.data.authorEmail.lower() == request.auth.token.email.lower()
+            )
+          );
       }
 
       match /viewedCommunityCases/{caseId} {
@@ -409,10 +442,40 @@ service cloud.firestore {
       }
     }
 
+    // Surgical Community Stories & Short Clinical Highlights
+    match /communityStories/{storyId} {
+      allow get: if isValidId(storyId) && isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isValidId(storyId)
+        && isSignedIn()
+        && isValidCommunityStoryPayload(incoming())
+        && incoming().id == storyId
+        && (incoming().authorId == request.auth.uid || isSuperAdmin())
+        && (!('deletedByAdmin' in incoming()) || incoming().deletedByAdmin == false || isSuperAdmin());
+
+      allow update: if isValidId(storyId)
+        && isSignedIn()
+        && isValidCommunityStoryPayload(incoming())
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'likedByUserIds', 'likesCount', 'viewedByUserIds', 'viewsCount', 'updatedAt'
+          ])
+          || existing().authorId == request.auth.uid
+          || isSuperAdmin()
+        );
+
+      allow delete: if isValidId(storyId)
+        && isSignedIn()
+        && (existing().authorId == request.auth.uid || isSuperAdmin());
+    }
+
     // Long-Form Surgical Community Threads & Nested Replies
     match /communityThreads/{threadId} {
       allow get: if isValidId(threadId) && isSignedIn();
-      allow list: if isSignedIn() && (resource.data.deletedByAdmin == false || isSuperAdmin());
+      allow list: if isSignedIn();
 
       allow create: if isValidId(threadId)
         && isSignedIn()
@@ -442,11 +505,12 @@ service cloud.firestore {
         );
 
       allow delete: if isValidId(threadId)
+        && isSignedIn()
         && (existing().authorId == request.auth.uid || isSuperAdmin());
 
       match /replies/{replyId} {
         allow get: if isValidId(threadId) && isValidId(replyId) && isSignedIn();
-        allow list: if isValidId(threadId) && isSignedIn() && (resource.data.deletedByAdmin == false || isSuperAdmin());
+        allow list: if isValidId(threadId) && isSignedIn();
 
         allow create: if isValidId(threadId) && isValidId(replyId)
           && isSignedIn()
@@ -471,52 +535,46 @@ service cloud.firestore {
           );
 
         allow delete: if isValidId(threadId) && isValidId(replyId)
+          && isSignedIn()
           && (existing().authorId == request.auth.uid || isSuperAdmin());
       }
     }
 
-    // Shared Surgical Community Cases Feed (Single Source of Truth)
+    // Shared Surgical Community Cases Feed (Authenticated Community Access)
     match /communityCases/{caseId} {
-      allow get: if isValidId(caseId);
-      allow list: if true;
+      allow get: if isValidId(caseId) && isSignedIn();
+      allow list: if isSignedIn();
 
       allow create: if isValidId(caseId)
+        && isSignedIn()
         && isValidClinicalCasePayload(incoming())
         && ('userId' in incoming()) && ('primaryDiagnosis' in incoming())
-        // SECURITY FIX: anonymous publishing is confined to the guest ^usr_ namespace;
-        // signed-in publishing requires the session to own the case payload.
-        && (isGuestNamespace(incoming().userId) || isCommunityCaseOwner(incoming()) || isSuperAdmin());
+        && (isCommunityCaseOwner(incoming()) || isSuperAdmin());
 
       allow update: if isValidId(caseId)
+        && isSignedIn()
         && isValidClinicalCasePayload(incoming())
         && (!('userId' in existing()) || incoming().userId == existing().userId)
         && (
-          // Community likes and comments from peers
-          // SECURITY FIX: requires an authenticated session — anonymous requests can no longer
-          // forge likes or comments on behalf of real users.
-          (
-            isSignedIn()
-            && incoming().diff(existing()).affectedKeys().hasOnly([
-              'likesCount', 'likedByUserIds', 'likedByUsers', 'commentsCount', 'comments', 'updatedAt', 'updatedAtServer'
-            ])
-          )
-          || (isCommunityCaseOwner(existing()) || isSuperAdmin())
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'likesCount', 'likedByUserIds', 'likedByUsers', 'commentsCount', 'comments', 'updatedAt', 'updatedAtServer'
+          ])
+          || isCommunityCaseOwner(existing())
+          || isSuperAdmin()
         );
 
       allow delete: if isValidId(caseId)
+        && isSignedIn()
         && (isCommunityCaseOwner(existing()) || isSuperAdmin());
 
-      // Permanent Comments Subcollection (immutable once created; deletable only by author or super_admin)
       match /comments/{commentId} {
-        allow get: if isValidId(caseId) && isValidId(commentId);
-        allow list: if isValidId(caseId);
+        allow get: if isValidId(caseId) && isValidId(commentId) && isSignedIn();
+        allow list: if isValidId(caseId) && isSignedIn();
 
         allow create: if isValidId(caseId) && isValidId(commentId)
           && isValidCommunityCommentPayload(incoming())
           && incoming().caseId == caseId
           && incoming().id == commentId
-          // SECURITY FIX: comments require an authenticated session bound to the claimed userId
-          // (previously anonymous callers could post comments under any real user's identity).
           && isSignedIn()
           && (incoming().userId == request.auth.uid || isSuperAdmin())
           && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
@@ -524,20 +582,18 @@ service cloud.firestore {
         allow update: if false;
 
         allow delete: if isValidId(caseId) && isValidId(commentId)
+          && isSignedIn()
           && (existing().userId == request.auth.uid || isSuperAdmin());
       }
 
-      // Permanent Likes Subcollection (keyed per userId to prevent duplicate likes)
       match /likes/{likeId} {
-        allow get: if isValidId(caseId) && isValidId(likeId);
-        allow list: if isValidId(caseId);
+        allow get: if isValidId(caseId) && isValidId(likeId) && isSignedIn();
+        allow list: if isValidId(caseId) && isSignedIn();
 
         allow create: if isValidId(caseId) && isValidId(likeId)
           && isValidCommunityLikePayload(incoming())
           && incoming().caseId == caseId
           && incoming().userId == likeId
-          // SECURITY FIX: likes require an authenticated session bound to the claimed userId
-          // (previously anonymous callers could forge likes under any real user's identity).
           && isSignedIn()
           && (likeId == request.auth.uid || isSuperAdmin())
           && existsAfter(/databases/$(database)/documents/communityCases/$(caseId));
@@ -545,37 +601,31 @@ service cloud.firestore {
         allow update: if false;
 
         allow delete: if isValidId(caseId) && isValidId(likeId)
+          && isSignedIn()
           && (likeId == request.auth.uid || existing().userId == request.auth.uid || isSuperAdmin());
       }
     }
 
-    // Email/password fallback credential registry (salted SHA-256 hashes only)
-    // SECURITY FIX (CRITICAL): this collection previously allowed anonymous list (`allow list: if true`)
-    // which dumped every email + password hash pair, and anonymous create/update which allowed
-    // account takeover by overwriting any account's hash. All access now requires the signed-in
-    // owner (doc id == auth uid) or the super admin. The cross-device fallback login flow is
-    // intentionally sacrificed in favour of Firebase Auth as the only trusted credential path.
+    // Legacy accounts cleanup access (strictly owner or super_admin)
     match /accounts/{accountId} {
       allow get: if isValidId(accountId) && (isOwner(accountId) || isSuperAdmin());
       allow list: if isSuperAdmin();
       allow create: if isValidId(accountId)
+        && isSignedIn()
         && ('uid' in incoming() && incoming().uid is string && incoming().uid.size() <= 128)
         && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150)
         && (isOwner(accountId) || isSuperAdmin());
       allow update: if isValidId(accountId)
+        && isSignedIn()
         && ('uid' in incoming() && incoming().uid is string && incoming().uid.size() <= 128)
         && ('email' in incoming() && incoming().email is string && incoming().email.size() <= 150)
         && (isOwner(accountId) || isEmailOwner(existing()) || isSuperAdmin());
-      allow delete: if isValidId(accountId) && (
-        isOwner(accountId)
-        || isEmailOwner(existing())
-        || isSuperAdmin()
-      );
+      allow delete: if isValidId(accountId)
+        && isSignedIn()
+        && (isOwner(accountId) || isEmailOwner(existing()) || isSuperAdmin());
     }
 
     // Admin deletion tombstones
-    // SECURITY FIX: admin tooling was previously open to anonymous callers (`!isSignedIn()`);
-    // now reads are owner/super-admin only and writes are super-admin (or self tombstone) only.
     match /deleted_users/{uid} {
       allow get: if isValidId(uid) && (isOwner(uid) || isSuperAdmin());
       allow list: if isSuperAdmin();
@@ -584,17 +634,38 @@ service cloud.firestore {
       allow delete: if isValidId(uid) && isSuperAdmin();
     }
 
-    // Persistent Community & Admin Notifications
-    // SECURITY FIX: creation and read-state updates now require an authenticated session —
-    // anonymous callers can no longer impersonate senders or tamper with notification state.
+    // Persistent Community & Admin Notifications (Recipient & Broadcast Scoped)
     match /notifications/{notificationId} {
-      allow get: if isValidId(notificationId);
-      allow list: if isSignedIn();
+      allow get: if isValidId(notificationId) && isSignedIn() && (
+        isSuperAdmin()
+        || ('targetUserId' in resource.data && resource.data.targetUserId == request.auth.uid)
+        || ('senderUserId' in resource.data && resource.data.senderUserId == request.auth.uid)
+        || ('isBroadcast' in resource.data && resource.data.isBroadcast == true)
+        || (
+          (!('targetUserId' in resource.data) || resource.data.targetUserId == null || resource.data.targetUserId == '')
+          && 'category' in resource.data
+          && resource.data.category in ['general', 'urgent', 'clinical']
+        )
+      );
+
+      allow list: if isSignedIn() && (
+        isSuperAdmin()
+        || ('targetUserId' in resource.data && resource.data.targetUserId == request.auth.uid)
+        || ('senderUserId' in resource.data && resource.data.senderUserId == request.auth.uid)
+        || ('isBroadcast' in resource.data && resource.data.isBroadcast == true)
+        || (
+          (!('targetUserId' in resource.data) || resource.data.targetUserId == null || resource.data.targetUserId == '')
+          && 'category' in resource.data
+          && resource.data.category in ['general', 'urgent', 'clinical']
+        )
+      );
 
       allow create: if isValidId(notificationId)
         && isSignedIn()
         && isValidNotificationPayload(incoming())
-        && (!('type' in incoming()) || incoming().type != 'admin_broadcast' || isSuperAdmin());
+        && (!('senderUserId' in incoming()) || incoming().senderUserId == request.auth.uid || isSuperAdmin())
+        && (!('type' in incoming()) || incoming().type != 'admin_broadcast' || isSuperAdmin())
+        && (!('isBroadcast' in incoming()) || incoming().isBroadcast != true || isSuperAdmin());
 
       allow update: if isValidId(notificationId)
         && isSignedIn()
@@ -602,8 +673,14 @@ service cloud.firestore {
         && (!('type' in existing()) || incoming().type == existing().type)
         && (
           (
-            // Read-state only: any signed-in recipient may mark their own read state.
             incoming().diff(existing()).affectedKeys().hasOnly(['readByUserIds', 'status', 'updatedAt'])
+            && (
+              isSuperAdmin()
+              || ('targetUserId' in existing() && existing().targetUserId == request.auth.uid)
+              || ('senderUserId' in existing() && existing().senderUserId == request.auth.uid)
+              || ('isBroadcast' in existing() && existing().isBroadcast == true)
+              || (!('targetUserId' in existing()) && 'category' in existing() && existing().category in ['general', 'urgent', 'clinical'])
+            )
           )
           || (
             (!('targetUserId' in existing()) || incoming().targetUserId == existing().targetUserId)
@@ -617,12 +694,19 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isSuperAdmin();
+      allow delete: if isValidId(notificationId) && (
+        isSuperAdmin()
+        || (
+          isSignedIn() && (
+            ('targetUserId' in existing() && existing().targetUserId == request.auth.uid)
+            || ('senderUserId' in existing() && existing().senderUserId == request.auth.uid)
+          )
+        )
+      );
     }
 
     match /notification_replies/{replyId} {
-      allow get: if isValidId(replyId);
-      // SECURITY FIX: replies required an authenticated session (was open to anonymous).
+      allow get: if isValidId(replyId) && isSignedIn();
       allow list: if isSignedIn();
       allow create: if isValidId(replyId)
         && isSignedIn()
@@ -631,8 +715,6 @@ service cloud.firestore {
     }
 
     match /audit_logs/{logId} {
-      // SECURITY FIX: audit trail was readable and writable by anonymous callers;
-      // now read is super-admin only and writes require an authenticated session.
       allow get, list: if isSuperAdmin();
       allow create: if isValidId(logId) && isSignedIn();
       allow update, delete: if false;

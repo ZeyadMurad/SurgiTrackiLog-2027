@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { translations } from '../lib/i18n';
 import { ClinicalCase } from '../types';
 import { SurgeonsCarousel } from './SurgeonsCarousel';
+import { SurgicalStoriesBar } from './SurgicalStoriesBar';
 import { SurgicalCommunityPost } from './SurgicalCommunityPost';
 import { DoctorProfileModal } from './DoctorProfileModal';
 import { AddCaseModal } from './AddCaseModal';
@@ -297,6 +298,9 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
       <SurgeonsCarousel
         onSelectDoctor={(doc) => setSelectedDoctor(doc)}
       />
+
+      {/* 1.5. Real-Time Surgical Stories & Clinical Pearls */}
+      <SurgicalStoriesBar onSelectDoctorById={handleSelectDoctorById} />
 
       {/* 2. Feed Tab Switcher & Filter Controls */}
       <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">

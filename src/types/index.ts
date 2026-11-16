@@ -376,7 +376,7 @@ export interface AppNotification {
   title: string;
   message: string;
   category: 'general' | 'urgent' | 'clinical' | 'administrative' | 'social';
-  type?: 'new_follower' | 'follow_request' | 'follow_accepted' | 'follow_rejected' | 'new_like' | 'new_comment' | 'new_case' | 'admin_broadcast';
+  type?: 'new_follower' | 'follow_request' | 'follow_accepted' | 'follow_rejected' | 'new_like' | 'new_comment' | 'new_case' | 'new_story' | 'admin_broadcast';
   senderEmail?: string;
   senderName?: string;
   senderPhotoUrl?: string;
@@ -385,6 +385,7 @@ export interface AppNotification {
   targetCaseId?: string;
   targetCaseTitle?: string;
   navigationRef?: string;
+  isBroadcast?: boolean;
   createdAt: string;
   createdAtServer?: any;
   readByUserIds?: string[];
@@ -400,6 +401,28 @@ export interface NotificationReply {
   userName: string;
   replyMessage: string;
   createdAt: string;
+}
+
+export interface CommunityStory {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorSpecialty?: string;
+  authorHospital?: string;
+  authorPhotoUrl?: string;
+  title: string;
+  content: string;
+  category: 'clinical_pearl' | 'operative_tip' | 'case_update' | 'milestone';
+  imageUrl?: string;
+  relatedCaseId?: string;
+  likedByUserIds: string[];
+  likesCount: number;
+  viewedByUserIds?: string[];
+  viewsCount?: number;
+  deletedByAdmin?: boolean;
+  createdAt: string;
+  createdAtServer?: any;
+  updatedAt: string;
 }
 
 export * from './newTypes';

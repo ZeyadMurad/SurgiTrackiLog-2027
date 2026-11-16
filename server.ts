@@ -1,6 +1,5 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import nodemailer, { Transporter } from 'nodemailer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -47,15 +46,11 @@ app.use(express.json({ limit: '2mb' }));
 // ----------------------------------------------------------------------------
 interface RateBucket { count: number; resetAt: number }
 const rateBuckets = new Map<string, RateBucket>();
-const emailCooldowns = new Map<string, number>(); // per-email last-send timestamp
 
 const sweepRateState = () => {
   const now = Date.now();
   for (const [key, bucket] of rateBuckets) {
     if (now > bucket.resetAt) rateBuckets.delete(key);
-  }
-  for (const [email, ts] of emailCooldowns) {
-    if (now - ts > 10 * 60 * 1000) emailCooldowns.delete(email);
   }
 };
 const rateSweepTimer = setInterval(sweepRateState, 5 * 60 * 1000);
@@ -244,249 +239,44 @@ Context focus: ${contextType || 'General Surgical Terminology & Translation'}. T
   }
 });
 
-// Email Transporter Initialization
-// Supports production SMTP via environment variables, with graceful fallback
-let mailTransporter: Transporter | null = null;
-
-const initMailTransporter = () => {
-  if (mailTransporter) return mailTransporter;
-
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    mailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  } else if (fs.existsSync('/usr/sbin/sendmail')) {
-    // Standard sendmail transport when binary is installed
-    mailTransporter = nodemailer.createTransport({
-      sendmail: true,
-      newline: 'unix',
-      path: '/usr/sbin/sendmail',
-    });
-  } else {
-    // Stream transporter when external relay/sendmail is not available in container
-    mailTransporter = nodemailer.createTransport({
-      streamTransport: true,
-      newline: 'unix',
-      buffer: true,
-    });
-  }
-  return mailTransporter;
-};
-
-// Strict Token Store for Real Clickable Email Verification Links
-// REQUIREMENT: Strict 30-second server-enforced expiration, single-use, no OTP
-interface EmailVerificationRecord {
-  token: string;
-  email: string;
-  createdAt: number;
-  expiresAt: number;
-  used: boolean;
-}
-
-const verificationTokens = new Map<string, EmailVerificationRecord>();
-// Set of verified email addresses (persisted in server memory, initialized with administrator)
-const verifiedEmails = new Set<string>(['zeadmorud2030@gmail.com']);
-
-// Endpoint: Send Secure Clickable Email Verification Link (Strict 30-Second Expiry)
+// Deprecated email verification routes (Email verification removed for immediate account activation)
 app.post(
   '/api/auth/send-verification-link',
-  // SECURITY FIX: throttled — 5 emails / 10 min / IP (was an unthrottled email-bombing vector).
   rateLimit('verify-email', RATE_LIMITS.verificationEmail.max, RATE_LIMITS.verificationEmail.windowMs),
-  async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email || typeof email !== 'string' || !/^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/.test(email)) {
-      return res.status(400).json({ error: 'A valid email address is required.' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const now = Date.now();
-
-    // SECURITY FIX: per-email cooldown (60 s) — a single address cannot be hammered
-    // with verification emails even from rotating IPs.
-    const lastSentAt = emailCooldowns.get(cleanEmail) || 0;
-    if (now - lastSentAt < 60 * 1000) {
-      const retryAfterSec = Math.ceil((60 * 1000 - (now - lastSentAt)) / 1000);
-      res.setHeader('Retry-After', String(retryAfterSec));
-      return res.status(429).json({
-        error: 'A verification link was just sent to this address. Please wait before requesting another.',
-      });
-    }
-    emailCooldowns.set(cleanEmail, now);
-
-    // Invalidate any existing unused tokens for this account (Requirement F)
-    for (const [t, record] of verificationTokens.entries()) {
-      if (record.email === cleanEmail && !record.used) {
-        verificationTokens.delete(t);
-      }
-    }
-
-    // Generate cryptographically secure, unique, single-use token (Requirement A.3)
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = now + 30 * 1000; // STRICT 30 SECONDS
-
-    verificationTokens.set(token, {
-      token,
-      email: cleanEmail,
-      createdAt: now,
-      expiresAt,
-      used: false,
+  (_req, res) => {
+    return res.status(410).json({
+      deprecated: true,
+      emailVerificationRequired: false,
+      error: 'Email verification has been disabled. Accounts activate immediately upon registration.',
     });
-
-    // SECURITY FIX: base URL now comes from APP_URL (canonical, from env) with a strictly
-    // validated Host fallback — previously the raw Host / X-Forwarded-Proto headers were
-    // used, allowing an attacker to poison the verification link sent inside the email.
-    const baseUrl = resolveBaseUrl(req);
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&email=${encodeURIComponent(cleanEmail)}`;
-
-    console.log(`[SurgiTrack Security] Real Verification Link generated for ${cleanEmail}: ${verificationUrl} (Expires in 30s)`);
-
-    // Dispatch real email via nodemailer (Requirement G)
-    try {
-      const transporter = initMailTransporter();
-      const mailOptions = {
-        from: process.env.SMTP_FROM || '"SurgiTrack iLog Verification" <verify@surgitrack.app>',
-        to: cleanEmail,
-        subject: 'Verify Your SurgiTrack iLog Account (Action Required in 30 Seconds)',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
-            <div style="background: #101C32; padding: 18px; border-radius: 12px; text-align: center; margin-bottom: 24px;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: bold;">SurgiTrack <span style="color: #2dd4bf;">iLog</span></h1>
-              <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 12px;">Official Surgical Training & Clinical Portfolio Platform</p>
-            </div>
-            
-            <h2 style="color: #0f172a; font-size: 16px; margin-bottom: 12px;">Activate Your Surgical Portfolio</h2>
-            <p style="color: #334155; font-size: 14px; line-height: 1.6;">
-              Thank you for registering with SurgiTrack. To complete your account activation and access your protected clinical portfolio, please verify your email address (<strong>${cleanEmail}</strong>) by clicking the button below:
-            </p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${verificationUrl}" style="background-color: #0d9488; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25);">
-                Verify My SurgiTrack Account
-              </a>
-            </div>
-            
-            <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px; margin-top: 20px;">
-              <p style="color: #991b1b; font-size: 13px; margin: 0; font-weight: bold;">
-                ⚠️ STRICT SECURITY NOTICE: This verification link expires in exactly 30 seconds from generation.
-              </p>
-              <p style="color: #7f1d1d; font-size: 12px; margin: 6px 0 0 0;">
-                If the link expires, you can request a new verification link from the SurgiTrack registration screen.
-              </p>
-            </div>
-            
-            <p style="color: #64748b; font-size: 12px; margin-top: 24px; word-break: break-all;">
-              Or copy and paste this verification URL into your browser:<br/>
-              <a href="${verificationUrl}" style="color: #0d9488;">${verificationUrl}</a>
-            </p>
-            
-            <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
-            <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">
-              SurgiTrack iLog &copy; 2026. If you did not request this registration, please disregard this email.
-            </p>
-          </div>
-        `,
-      };
-
-      await transporter.sendMail(mailOptions);
-      console.log(`[SurgiTrack Security] Verification email delivered to ${cleanEmail}`);
-    } catch (mailError: any) {
-      console.warn(`[SurgiTrack Security] Mail transporter notification for ${cleanEmail}:`, mailError.message);
-    }
-
-    return res.json({
-      success: true,
-      message: `A verification link has been sent to ${cleanEmail}. Please open the link within 30 seconds to activate your account.`,
-      email: cleanEmail,
-      expiresInSeconds: 30,
-      expiresAt,
-    });
-  } catch (error: any) {
-    console.error('Error generating verification link:', error);
-    return res.status(500).json({ error: error.message || 'Failed to dispatch verification link.' });
   }
-});
+);
 
-// Endpoint: Validate Verification Token (Strict 30-Second Server-Enforced Expiration)
-// SECURITY FIX: throttled (30/min/IP) to prevent token brute-forcing.
 app.get(
   '/api/auth/verify-token',
   rateLimit('verify-token', RATE_LIMITS.authQueries.max, RATE_LIMITS.authQueries.windowMs),
-  (req, res) => {
-  const token = req.query.token as string;
-  if (!token || typeof token !== 'string') {
-    return res.status(400).json({ valid: false, error: 'Verification token is required.' });
-  }
-
-  const record = verificationTokens.get(token);
-  if (!record) {
-    return res.status(400).json({
+  (_req, res) => {
+    return res.status(410).json({
       valid: false,
-      error: 'Invalid verification token. Please request a new verification link.',
+      deprecated: true,
+      emailVerificationRequired: false,
+      error: 'Email verification is no longer required. Please sign in directly.',
     });
   }
+);
 
-  // Already used check (Requirement B: Single-use, prevent replay)
-  if (record.used) {
-    return res.status(400).json({
-      valid: false,
-      used: true,
-      error: 'This verification link has already been used. Please log in or request a new link.',
-    });
-  }
-
-  // STRICT 30-SECOND EXPIRATION ENFORCED BY SERVER TIME (Requirement B & F)
-  const now = Date.now();
-  const elapsedMs = now - record.createdAt;
-  if (elapsedMs > 30 * 1000) {
-    // Invalidate expired token
-    verificationTokens.delete(token);
-    console.warn(`[SurgiTrack Security] Token rejected: Expired after ${Math.round(elapsedMs / 1000)}s (>30s limit)`);
-    return res.status(400).json({
-      valid: false,
-      expired: true,
-      error: 'This verification link has expired. Please request a new verification link.',
-      email: record.email,
-    });
-  }
-
-  // Token valid! Mark as used immediately to prevent reuse (Requirement E)
-  record.used = true;
-  verifiedEmails.add(record.email.toLowerCase());
-  verificationTokens.set(token, record);
-
-  console.log(`[SurgiTrack Security] Account ${record.email} successfully verified within ${Math.round(elapsedMs / 1000)}s!`);
-
-  return res.json({
-    valid: true,
-    email: record.email,
-    message: 'Email successfully verified! Your account is now active.',
-  });
-});
-
-// Endpoint: Check Account Verification Status (Requirement H)
-// SECURITY FIX: throttled (30/min/IP) to slow down enumeration of verified addresses.
 app.get(
   '/api/auth/verification-status',
   rateLimit('verify-status', RATE_LIMITS.authQueries.max, RATE_LIMITS.authQueries.windowMs),
   (req, res) => {
-  const email = (req.query.email as string || '').trim().toLowerCase();
-  if (!email) {
-    return res.status(400).json({ verified: false, error: 'Email parameter required.' });
+    const email = ((req.query.email as string) || '').trim().toLowerCase();
+    return res.json({
+      email,
+      verified: true,
+      emailVerificationRequired: false,
+    });
   }
-
-  const isVerified = verifiedEmails.has(email) || email === 'zeadmorud2030@gmail.com';
-  return res.json({
-    email,
-    verified: isVerified,
-  });
-});
+);
 
 // Helper to assign high-yield local clinical imagery based on category & title keywords
 const getCuratedImageUrl = (category: string, title: string = ''): string => {

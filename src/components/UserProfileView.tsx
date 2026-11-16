@@ -12,7 +12,7 @@ interface UserProfileViewProps {
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({ onNavigateToBackup, onOpenYourPosts }) => {
-  const { profile, user, updateUserProfile, updateProfilePhoto, setLanguage, language, logout, deleteCurrentAccount, resetPasswordDirect } = useAuth();
+  const { profile, user, updateUserProfile, updateProfilePhoto, setLanguage, language, logout, deleteCurrentAccount, changePassword } = useAuth();
   const { allDoctors, acceptFollowRequest, declineFollowRequest } = useData();
   const isRTL = language === 'ar';
 
@@ -45,6 +45,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ onNavigateToBa
 
   // Password change state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
@@ -106,19 +107,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ onNavigateToBa
       return;
     }
 
-    const email = profile?.email || user?.email;
-    if (!email) {
-      setPasswordError(isRTL ? 'البريد الإلكتروني غير معروف' : 'User email not found');
-      return;
-    }
-
     setPasswordUpdating(true);
     try {
-      await resetPasswordDirect(email, newPassword);
+      await changePassword(currentPassword, newPassword);
       setPasswordSuccess(true);
       setTimeout(() => {
         setShowPasswordModal(false);
         setPasswordSuccess(false);
+        setCurrentPassword('');
         setNewPassword('');
         setConfirmNewPassword('');
       }, 2000);
@@ -517,6 +513,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ onNavigateToBa
             )}
 
             <form onSubmit={handlePasswordChange} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  {isRTL ? 'كلمة المرور الحالية' : 'Current Password'}
+                </label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
               <div>
                 <label className="block text-slate-700 font-bold mb-1">
                   {isRTL ? 'كلمة المرور الجديدة *' : 'New Password *'}

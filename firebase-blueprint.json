@@ -1238,6 +1238,90 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CommunityStory": {
+      "title": "CommunityStory",
+      "description": "Surgical community story or clinical pearl shared by a registered surgeon",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "authorId": {
+          "type": "string"
+        },
+        "authorName": {
+          "type": "string"
+        },
+        "authorSpecialty": {
+          "type": "string"
+        },
+        "authorHospital": {
+          "type": "string"
+        },
+        "authorPhotoUrl": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "clinical_pearl",
+            "or_moment",
+            "research_note",
+            "milestone",
+            "technique"
+          ]
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "relatedCaseId": {
+          "type": "string"
+        },
+        "likedByUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "likesCount": {
+          "type": "number"
+        },
+        "viewedByUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "viewsCount": {
+          "type": "number"
+        },
+        "deletedByAdmin": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "authorName",
+        "title",
+        "content",
+        "category",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -1308,6 +1392,10 @@
     "/users/{userId}/simulationSessions/{sessionId}": {
       "schema": "SimulationSession",
       "description": "Simulation lab session logs owned by a trainee/surgeon."
+    },
+    "/communityStories/{storyId}": {
+      "schema": "CommunityStory",
+      "description": "Shared Surgical Community stories and clinical pearls."
     }
   }
 }

@@ -1,5 +1,10 @@
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
+} from 'firebase/auth';
 import {
   initializeFirestore,
   getFirestore,
@@ -8,16 +13,19 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  uploadString,
+  getDownloadURL,
+} from 'firebase/storage';
 import firebaseConfigFallback from '../../firebase-applet-config.json';
 
 /**
  * SECURITY: Firebase credentials are read from environment variables (.env file,
  * excluded from Git via .gitignore) instead of being hardcoded in the repository.
  * In Vite, only variables prefixed with VITE_ are exposed to the client bundle.
- * See .env.example for the required variable names.
- * The committed `firebase-applet-config.json` contains EMPTY values on purpose:
- * AI Studio re-injects the real config at deploy time; everywhere else you must
- * copy .env.example to .env and fill in the values.
  */
 const firebaseConfigFromEnv: FirebaseOptions = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -36,7 +44,7 @@ const hasEnvConfig = Boolean(
 if (!hasEnvConfig) {
   console.warn(
     '[SurgiTrack] Firebase environment variables are missing (VITE_FIREBASE_*). ' +
-      'Copy .env.example to .env and fill in the values. Falling back to firebase-applet-config.json.'
+      'Falling back to firebase-applet-config.json.'
   );
 }
 
@@ -44,7 +52,7 @@ const firebaseConfig: FirebaseOptions = hasEnvConfig
   ? firebaseConfigFromEnv
   : (firebaseConfigFallback as FirebaseOptions);
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const firestoreDbId =
   import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
   (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
@@ -79,6 +87,151 @@ try {
 }
 
 export const db = firestoreInstance;
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+
+// Explicitly enforce durable multi-tab browser persistence so Firebase Auth sessions
+// survive page refreshes, tab switches, browser restarts, and deployments.
+export const authPersistenceReady: Promise<void> = (async () => {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch {
+    try {
+      await setPersistence(auth, indexedDBLocalPersistence);
+    } catch {
+      // Memory persistence fallback
+    }
+  }
+})();
+
+/**
+ * Upload a compressed media Data URL or File to Firebase Storage under users/{uid}/...
+ * Returns a durable HTTPS download URL when Firebase Storage is configured and reachable,
+ * otherwise falls back gracefully to the compressed data URL so clinical data is never lost.
+ */
+export async function uploadMediaToStorage(
+  uid: string,
+  folder: 'avatars' | 'cases' | 'stories',
+  fileOrDataUrl: File | string,
+  fileNamePrefix: string = 'media'
+): Promise<string> {
+  const bucketConfigured = Boolean(firebaseConfig.storageBucket);
+  if (!uid || uid === 'local-surgeon-001' || !bucketConfigured || !navigator.onLine) {
+    if (typeof fileOrDataUrl === 'string') return fileOrDataUrl;
+    throw new Error('Cannot upload binary file while offline');
+  }
+
+  const safeName = `${fileNamePrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const path = `users/${uid}/${folder}/${safeName}`;
+  const refObj = storageRef(storage, path);
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Storage upload timeout')), 4500)
+  );
+
+  try {
+    const uploadTask = (async () => {
+      if (typeof fileOrDataUrl === 'string') {
+        if (!fileOrDataUrl.startsWith('data:')) return fileOrDataUrl;
+        await uploadString(refObj, fileOrDataUrl, 'data_url');
+      } else {
+        await uploadBytes(refObj, fileOrDataUrl, {
+          contentType: fileOrDataUrl.type || 'application/octet-stream',
+        });
+      }
+      return await getDownloadURL(refObj);
+    })();
+
+    return await Promise.race([uploadTask, timeoutPromise]);
+  } catch (err) {
+    console.warn('[SurgiTrack Storage] Falling back to inline compressed media:', (err as any)?.message || err);
+    if (typeof fileOrDataUrl === 'string') {
+      return fileOrDataUrl;
+    }
+    throw err;
+  }
+}
+
+export function getFirebaseAuthErrorMessage(err: any, language: string = 'en', flow: 'login' | 'register' | 'reset' | 'password_change' = 'login'): string {
+  const code = String(err?.code || '').toLowerCase();
+  const rawMsg = String(err?.message || '');
+
+  if (code.includes('auth/too-many-requests')) {
+    return language === 'ar'
+      ? 'تم حظر المحاولات مؤقتاً بسبب تكرار المحاولات الفاشلة. يرجى الانتظار بضع دقائق ثم المحاولة مرة أخرى.'
+      : language === 'de'
+      ? 'Zu viele fehlgeschlagene Anmeldeversuche. Bitte warten Sie einige Minuten und versuchen Sie es erneut.'
+      : 'Too many failed attempts. Please wait a few minutes before trying again.';
+  }
+
+  if (code.includes('auth/invalid-email')) {
+    return language === 'ar'
+      ? 'صيغة البريد الإلكتروني غير صالحة. يرجى التحقق من البريد المدخل.'
+      : language === 'de'
+      ? 'Ungültiges E-Mail-Format. Bitte überprüfen Sie Ihre Eingabe.'
+      : 'Invalid email address format. Please enter a valid email.';
+  }
+
+  if (code.includes('auth/email-already-in-use')) {
+    return language === 'ar'
+      ? 'هذا البريد الإلكتروني مسجل بالفعل في المنصة. يرجى تسجيل الدخول مباشرة.'
+      : language === 'de'
+      ? 'Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich direkt an.'
+      : 'An account with this email already exists. Please log in instead.';
+  }
+
+  if (code.includes('auth/weak-password')) {
+    return language === 'ar'
+      ? 'كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.'
+      : language === 'de'
+      ? 'Das Passwort ist zu schwach. Es muss mindestens 6 Zeichen lang sein.'
+      : 'Password is too weak. It must be at least 6 characters long.';
+  }
+
+  if (
+    code.includes('auth/invalid-credential') ||
+    code.includes('auth/wrong-password') ||
+    code.includes('auth/user-not-found') ||
+    code.includes('auth/invalid-login-credentials')
+  ) {
+    if (flow === 'reset') {
+      return language === 'ar'
+        ? 'تعذر إرسال رابط استعادة كلمة المرور. يرجى التحقق من البريد الإلكتروني المدخل.'
+        : 'Could not send password reset email. Please verify the email address.';
+    }
+    return language === 'ar'
+      ? 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور والمحاولة مجدداً.'
+      : language === 'de'
+      ? 'Ungültige Anmeldedaten. Bitte überprüfen Sie Ihre E-Mail-Adresse und Ihr Passwort.'
+      : 'Invalid email or password. Please check your credentials and try again.';
+  }
+
+  if (code.includes('auth/requires-recent-login')) {
+    return language === 'ar'
+      ? 'لأسباب أمنية، يرجى إعادة إدخال كلمة المرور الحالية أو تسجيل الخروج والدخول مجدداً قبل تغيير كلمة المرور.'
+      : 'For security reasons, please enter your current password or sign in again before changing your password.';
+  }
+
+  if (code.includes('auth/network-request-failed')) {
+    return language === 'ar'
+      ? 'تعذر الاتصال بخادم المصادقة. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.'
+      : 'Network error while contacting authentication service. Please check your connection.';
+  }
+
+  if (code.includes('auth/popup-closed-by-user')) {
+    return language === 'ar'
+      ? 'تم إغلاق نافذة تسجيل الدخول عبر Google قبل إتمام العملية.'
+      : 'Google sign-in popup was closed before completing.';
+  }
+
+  if (code.includes('auth/unauthorized-domain')) {
+    return language === 'ar'
+      ? 'النطاق الحالي غير مصرح به في إعدادات Firebase Auth.'
+      : 'This domain is not authorized in Firebase Authentication settings.';
+  }
+
+  return rawMsg || (language === 'ar' ? 'حدث خطأ في المصادقة.' : 'Authentication error occurred.');
+}
 
 /**
  * Recursively strips undefined keys from plain objects/arrays while preserving
@@ -159,8 +312,6 @@ export function formatPublicationDateTime(
     return new Date(ms).toISOString();
   }
 }
-
-export const auth = getAuth(app);
 
 export enum OperationType {
   CREATE = 'create',
@@ -271,7 +422,6 @@ export function safeSetLocalStorage(key: string, value: unknown): boolean {
     localStorage.setItem(key, serialize(value));
     return true;
   } catch {
-    // Evict large non-essential caches first when storage quota is reached
     for (const evictKey of EVICTABLE_CACHE_KEYS) {
       if (evictKey !== key) {
         try {
@@ -285,7 +435,6 @@ export function safeSetLocalStorage(key: string, value: unknown): boolean {
       localStorage.setItem(key, serialize(value));
       return true;
     } catch {
-      // Final fallback: strip bulky inline data: URLs (> 4KB) from the cached copy only
       if (typeof value !== 'string') {
         try {
           const compact = stripLargeInlineData(value, 4_000);
@@ -307,14 +456,15 @@ export function saveCompactCommunityCache(cases: any[]): void {
   safeSetLocalStorage('surgitrack_local_community_cases', compactList);
 }
 
-// Connectivity test
-export async function testConnection() {
+// Explicit connectivity verification helper (invoked only after auth, not on anonymous boot)
+export async function testConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
+    return true;
   } catch (error: any) {
     if (error?.message?.includes('offline') || error?.code === 'unavailable') {
       console.info('Firestore is operating in offline mode with full local persistence.');
     }
+    return false;
   }
 }
-testConnection().catch(() => {});
