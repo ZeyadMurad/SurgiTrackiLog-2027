@@ -407,6 +407,15 @@ export interface NotificationReply {
   createdAt: string;
 }
 
+export type StoryCategory =
+  | 'clinical_pearl'
+  | 'or_moment'
+  | 'research_note'
+  | 'milestone'
+  | 'technique'
+  | 'operative_tip'
+  | 'case_update';
+
 export interface CommunityStory {
   id: string;
   authorId: string;
@@ -416,7 +425,7 @@ export interface CommunityStory {
   authorPhotoUrl?: string;
   title: string;
   content: string;
-  category: 'clinical_pearl' | 'operative_tip' | 'case_update' | 'milestone';
+  category: StoryCategory;
   imageUrl?: string;
   relatedCaseId?: string;
   likedByUserIds: string[];

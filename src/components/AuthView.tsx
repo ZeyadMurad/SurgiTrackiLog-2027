@@ -8,6 +8,8 @@ import {
   ArrowRight,
   CheckCircle2,
   ShieldCheck,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { translations } from '../lib/i18n';
@@ -52,6 +54,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const supportsTextSecurity =
+    typeof CSS !== 'undefined' &&
+    (CSS.supports('-webkit-text-security', 'disc') || CSS.supports('webkit-text-security', 'disc'));
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -69,8 +77,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
 
@@ -87,6 +95,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setLoading(true);
     try {
       await loginWithEmail(cleanEmail, password);
+      setPassword('');
     } catch (err: any) {
       setErrorMessage(err.message || (isRTL ? 'فشل تسجيل الدخول. يرجى التحقق من البيانات.' : 'Authentication failed. Please verify your credentials.'));
     } finally {
@@ -108,8 +117,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
   };
 
   // Immediate Registration without any email verification wait or link
-  const handleInitiateRegistration = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleInitiateRegistration = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
 
@@ -152,6 +161,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
         hospitals,
         profilePhotoUrl: profilePhoto,
       });
+      setPassword('');
+      setConfirmPassword('');
     } catch (err: any) {
       setErrorMessage(err.message || (isRTL ? 'تعذر إنشاء الحساب. يرجى مراجعة البيانات.' : 'Registration failed. Please check your details.'));
     } finally {
@@ -344,7 +355,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <div className="p-6">
               {/* 1. LOGIN FORM */}
               {mode === 'login' && (
-                <form onSubmit={handleLogin} className="space-y-4">
+                <div
+                  className="space-y-4"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !loading) {
+                      e.preventDefault();
+                      handleLogin();
+                    }
+                  }}
+                >
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
                       {isRTL ? 'البريد الإلكتروني المسجل *' : 'Registered Email Address *'}
@@ -353,6 +372,14 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="email"
+                        name="st_login_identifier"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -382,18 +409,38 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     <div className="relative">
                       <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
-                        type="password"
+                        type={showPassword || supportsTextSecurity ? 'text' : 'password'}
+                        name="st_login_secret"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                         required
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                        className={`w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                          !showPassword && supportsTextSecurity ? '[-webkit-text-security:disc]' : ''
+                        }`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
                     </div>
                   </div>
 
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={() => handleLogin()}
                     disabled={loading}
                     className="w-full mt-2 bg-[#0D9488] hover:bg-teal-700 text-white font-bold text-xs py-3 rounded-xl transition shadow-md shadow-teal-900/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -436,12 +483,20 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     </svg>
                     <span>{isRTL ? 'الدخول بحساب Google' : 'Sign in with Google'}</span>
                   </button>
-                </form>
+                </div>
               )}
 
               {/* 2. REGISTER FORM (Direct immediate account activation — no email verification wait) */}
               {mode === 'register' && (
-                <form onSubmit={handleInitiateRegistration} className="space-y-3.5">
+                <div
+                  className="space-y-3.5"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !loading) {
+                      e.preventDefault();
+                      handleInitiateRegistration();
+                    }
+                  }}
+                >
                   <div className="flex items-center gap-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="relative w-14 h-14 rounded-2xl bg-slate-200 overflow-hidden border border-slate-300 flex items-center justify-center shrink-0">
                       {profilePhoto ? (
@@ -483,6 +538,14 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       </label>
                       <input
                         type="email"
+                        name="st_reg_identifier"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -497,28 +560,70 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       <label className="block text-xs font-bold text-slate-700 mb-1">
                         {isRTL ? 'كلمة المرور *' : 'Password (min. 6 chars) *'}
                       </label>
-                      <input
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPassword || supportsTextSecurity ? 'text' : 'password'}
+                          name="st_reg_secret"
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          data-lpignore="true"
+                          data-1p-ignore="true"
+                          data-bwignore="true"
+                          data-form-type="other"
+                          required
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className={`w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500 ${
+                            !showPassword && supportsTextSecurity ? '[-webkit-text-security:disc]' : ''
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(prev => !prev)}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
                         {isRTL ? 'تأكيد كلمة المرور *' : 'Confirm Password *'}
                       </label>
-                      <input
-                        type="password"
-                        required
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword || supportsTextSecurity ? 'text' : 'password'}
+                          name="st_reg_secret_confirm"
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          data-lpignore="true"
+                          data-1p-ignore="true"
+                          data-bwignore="true"
+                          data-form-type="other"
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className={`w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-teal-500 ${
+                            !showConfirmPassword && supportsTextSecurity ? '[-webkit-text-security:disc]' : ''
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(prev => !prev)}
+                          aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -598,7 +703,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   </div>
 
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={() => handleInitiateRegistration()}
                     disabled={loading}
                     className="w-full mt-2 bg-[#0D9488] hover:bg-teal-700 text-white font-bold text-xs py-3 rounded-xl transition shadow-md shadow-teal-900/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -611,7 +717,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     </span>
                     <ArrowRight size={15} />
                   </button>
-                </form>
+                </div>
               )}
 
               {/* 3. PASSWORD RESET FORM (Real Firebase Auth Reset Email) */}

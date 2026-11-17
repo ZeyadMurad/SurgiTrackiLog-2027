@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { translations } from '../lib/i18n';
 import { ClinicalCase } from '../types';
 import { SurgeonsCarousel } from './SurgeonsCarousel';
-import { SurgicalStoriesBar } from './SurgicalStoriesBar';
+import { CommunityStoriesSection } from './CommunityStoriesSection';
 import { SurgicalCommunityPost } from './SurgicalCommunityPost';
 import { DoctorProfileModal } from './DoctorProfileModal';
 import { AddCaseModal } from './AddCaseModal';
@@ -188,20 +188,22 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
     if (doc) setSelectedDoctor(doc);
   };
 
-  const focusCaseInFeed = (caseId: string) => {
+  const focusCaseInFeed = async (caseId: string) => {
+    if (!caseId) return;
     setFeedTab('all');
     setSearch('');
     setSelectedSpecialty('All');
     setActiveFocusedId(caseId);
+    await fetchCommunityCaseById(caseId).catch(() => null);
     setTimeout(() => {
       const el = document.getElementById(`community-case-${caseId}`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-    }, 150);
+    }, 220);
     setTimeout(() => {
       setActiveFocusedId(null);
-    }, 4500);
+    }, 5000);
   };
 
   return (
@@ -303,9 +305,9 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
         onSelectDoctor={(doc) => setSelectedDoctor(doc)}
       />
 
-      {/* 1.5. Real-Time Surgical Stories & Clinical Pearls */}
-      <SurgicalStoriesBar
-        onSelectDoctorById={handleSelectDoctorById}
+      {/* 1.5. Real-Time Clinical Stories & Operative Updates */}
+      <CommunityStoriesSection
+        onOpenRelatedCase={focusCaseInFeed}
         focusedStoryId={focusedStoryId}
         onClearFocusedStory={onClearFocusedStory}
       />

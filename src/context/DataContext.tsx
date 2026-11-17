@@ -104,10 +104,23 @@ interface DataContextType {
   syncStatus: SyncStatus;
   hasMoreCommunityCases: boolean;
   loadingMoreCommunity: boolean;
+  communityStories: CommunityStory[];
   stories: CommunityStory[];
+  hasMoreStories: boolean;
+  loadingMoreStories: boolean;
+  loadMoreStories: () => void;
+  createCommunityStory: (story: {
+    title: string;
+    content: string;
+    category: CommunityStory['category'];
+    imageFile?: File | null;
+    imageUrl?: string;
+    relatedCaseId?: string;
+  }) => Promise<string>;
   createStory: (story: { title: string; content: string; category: CommunityStory['category']; imageUrl?: string; relatedCaseId?: string }) => Promise<string>;
   toggleLikeStory: (storyId: string) => Promise<void>;
   markStoryViewed: (storyId: string) => Promise<void>;
+  deleteCommunityStory: (storyId: string) => Promise<void>;
   deleteStory: (storyId: string) => Promise<void>;
   viewedCommunityCaseIds: string[];
   firestoreQuotaExceeded: boolean;
@@ -208,7 +221,7 @@ const OFFLINE_QUEUE_KEY = 'surgitrack_offline_queue_';
 
 interface OfflineQueueItem {
   id: string;
-  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill' | 'thread' | 'simulation_session';
+  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill' | 'thread' | 'simulation_session' | 'recommendation' | 'article';
   action: 'create' | 'update' | 'delete';
   data?: any;
   parentId?: string;
@@ -247,9 +260,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return [];
     }
   });
-  const [doctorsPageSize, setDoctorsPageSize] = useState<number>(45);
+  const [cloudSyncReady, setCloudSyncReady] = useState<boolean>(false);
+  const [doctorsPageSize, setDoctorsPageSize] = useState<number>(80);
   const [hasMoreDoctors, setHasMoreDoctors] = useState<boolean>(false);
   const [loadingMoreDoctors, setLoadingMoreDoctors] = useState<boolean>(false);
+  const [storiesPageSize, setStoriesPageSize] = useState<number>(20);
+  const [hasMoreStories, setHasMoreStories] = useState<boolean>(false);
+  const [loadingMoreStories, setLoadingMoreStories] = useState<boolean>(false);
   const [stories, setStories] = useState<CommunityStory[]>(() => {
     try {
       const raw = localStorage.getItem('surgitrack_local_stories');
@@ -379,6 +396,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await setDoc(doc(db, 'communityThreads', item.id), cleanPayload(item.data), { merge: true });
         } else if (item.type === 'simulation_session') {
           await setDoc(doc(db, 'users', syncUid, 'simulationSessions', item.id), cleanPayload(item.data), { merge: true });
+        } else if (item.type === 'recommendation') {
+          if (item.action === 'delete') {
+            await deleteDoc(doc(db, 'users', syncUid, 'recommendations', item.id));
+          } else {
+            await setDoc(doc(db, 'users', syncUid, 'recommendations', item.id), cleanPayload(item.data), { merge: true });
+          }
+        } else if (item.type === 'article') {
+          if (item.action === 'delete') {
+            await deleteDoc(doc(db, 'users', syncUid, 'savedArticles', item.id));
+          } else {
+            await setDoc(doc(db, 'users', syncUid, 'savedArticles', item.id), cleanPayload(item.data), { merge: true });
+          }
         }
       } catch (err: any) {
         if (isFirestoreQuotaError(err)) {
@@ -416,7 +445,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('offline', handleOffline);
 
     // Initial check
-    if (navigator.onLine && user) {
+    setSyncStatus(prev => ({ ...prev, pendingCount: getOfflineQueue().length }));
+    if (navigator.onLine && (user?.uid || (profile?.userId && profile.userId !== 'local-surgeon-001'))) {
       processOfflineSyncQueue();
     }
 
@@ -424,7 +454,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user]);
+  }, [user?.uid, profile?.userId]);
 
   // Helper to load or initialize state from localStorage
   const loadLocal = <T,>(key: string, defaultVal: T): T => {
@@ -657,24 +687,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {}
 
-    // Community cases local cache initialization (no mock fallback)
-    try {
-      const storedCommunity = localStorage.getItem('surgitrack_local_community_cases');
-      if (storedCommunity) {
-        const parsed = JSON.parse(storedCommunity) as ClinicalCase[];
-        setCommunityCases(Array.isArray(parsed) ? parsed.filter(c => c.isPublished !== false) : []);
-      } else {
+    if (currentUid === 'local-surgeon-001') {
+      setCommunityCases([]);
+    } else {
+      try {
+        const storedCommunity = localStorage.getItem('surgitrack_local_community_cases');
+        if (storedCommunity) {
+          const parsed = JSON.parse(storedCommunity) as ClinicalCase[];
+          setCommunityCases(Array.isArray(parsed) ? parsed.filter(c => c.isPublished !== false) : []);
+        } else {
+          setCommunityCases([]);
+        }
+      } catch {
         setCommunityCases([]);
       }
-    } catch {
-      setCommunityCases([]);
     }
   }, [currentUid]);
 
   // Global Community Cases Real-Time Paginated Listener + legacy fallback (runs only when signed in)
   useEffect(() => {
     const authUid = auth.currentUser?.uid || user?.uid;
-    if (!authUid) return;
+    if (!authUid) {
+      setServerSortedCases([]);
+      setLegacySortedCases([]);
+      setFetchedExtraCases([]);
+      setCommunityCases([]);
+      setHasMoreCommunityCases(false);
+      setLoadingMoreCommunity(false);
+      return;
+    }
     let unsubServerCommunity: (() => void) | undefined;
     let isMounted = true;
 
@@ -781,13 +822,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadMoreDoctors = () => {
     if (loadingMoreDoctors) return;
     setLoadingMoreDoctors(true);
-    setDoctorsPageSize(prev => prev + 45);
+    setDoctorsPageSize(prev => prev + 60);
+  };
+
+  const loadMoreStories = () => {
+    if (loadingMoreStories) return;
+    setLoadingMoreStories(true);
+    setStoriesPageSize(prev => prev + 15);
   };
 
   // Global Registered Surgeons Real-Time Listener (paginated, runs when signed in, includes ALL active users)
   useEffect(() => {
     const authUid = auth.currentUser?.uid || user?.uid;
-    if (!authUid) return;
+    if (!authUid) {
+      setAllDoctors([]);
+      setHasMoreDoctors(false);
+      setLoadingMoreDoctors(false);
+      return;
+    }
     let unsubUsers: (() => void) | undefined;
     try {
       const usersQuery = query(collection(db, 'users'), limit(doctorsPageSize + 1));
@@ -826,7 +878,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   academicDegree: uData.medicalQualification || uData.academicDegree || 'MD / MBBS',
                   academicTitle: uData.academicTitle || (uData.currentPosition?.includes('Consultant') ? 'Consultant' : 'Dr.'),
                   specialty: uData.specialty || 'General Surgery',
-                  hospital: uData.hospitals || uData.hospital || 'University Hospital',
+                  hospital: (uData.hospitals || uData.hospital || '').trim(),
                   profilePhotoUrl: uData.profilePhotoUrl || '',
                   biography: uData.biography || (uData.currentPosition ? `${uData.currentPosition} • ${uData.specialty}` : 'Registered Surgeon'),
                   followers: followersArr,
@@ -951,7 +1003,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const authUid = auth.currentUser?.uid || user?.uid;
     const syncUids = myUidsKey ? myUidsKey.split('|') : [];
-    if (!authUid || syncUids.length === 0) return;
+    if (!authUid || syncUids.length === 0) {
+      setCloudSyncReady(false);
+      return;
+    }
+
+    setCloudSyncReady(false);
+    const pendingKeys = new Set<string>();
+    syncUids.forEach(uid => {
+      pendingKeys.add(`${uid}:cases`);
+      pendingKeys.add(`${uid}:supervisors`);
+      pendingKeys.add(`${uid}:sessions`);
+      pendingKeys.add(`${uid}:skills`);
+    });
+    const markSectionSynced = (key: string) => {
+      pendingKeys.delete(key);
+      if (pendingKeys.size === 0) {
+        setCloudSyncReady(true);
+      }
+    };
 
     const unsubs: (() => void)[] = [];
     const recordUnsubs = new Map<string, () => void>();
@@ -988,11 +1058,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           unsub();
           recordUnsubs.delete(key);
           recordsBySup.delete(key);
+          pendingKeys.delete(`${key}:records`);
         }
       }
       for (const sid of supIds) {
         const compositeKey = `${uid}::${sid}`;
         if (!recordUnsubs.has(compositeKey)) {
+          pendingKeys.add(`${compositeKey}:records`);
           const recRef = collection(db, 'users', uid, 'supervisors', sid, 'trainingRecords');
           const unsub = onSnapshot(
             recRef,
@@ -1002,8 +1074,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               );
               recordsBySup.set(compositeKey, supRecs);
               rebuildAllTrainingRecords();
+              markSectionSynced(`${compositeKey}:records`);
             },
-            (err) => console.warn(`Training records sync notice (${sid}):`, err.message)
+            (err) => {
+              console.warn(`Training records sync notice (${sid}):`, err.message);
+              markSectionSynced(`${compositeKey}:records`);
+            }
           );
           recordUnsubs.set(compositeKey, unsub);
         }
@@ -1029,8 +1105,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const merged = dedupeById(Array.from(casesByUid.values()).flat());
               setCases(merged);
               saveLocal('cases', merged);
+              markSectionSynced(`${uid}:cases`);
             },
-            (err) => console.warn(`Cases sync note (${uid}):`, err.message)
+            (err) => {
+              console.warn(`Cases sync note (${uid}):`, err.message);
+              markSectionSynced(`${uid}:cases`);
+            }
           )
         );
 
@@ -1045,8 +1125,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setSupervisors(merged);
               saveLocal('supervisors', merged);
               syncRecordListenersForUid(uid, uidSups.map(s => s.id).filter(Boolean));
+              markSectionSynced(`${uid}:supervisors`);
             },
-            (err) => console.warn(`Supervisors sync note (${uid}):`, err.message)
+            (err) => {
+              console.warn(`Supervisors sync note (${uid}):`, err.message);
+              markSectionSynced(`${uid}:supervisors`);
+            }
           )
         );
 
@@ -1062,8 +1146,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const merged = dedupeById(Array.from(sessionsByUid.values()).flat());
               setTrainingSessions(merged);
               saveLocal('sessions', merged);
+              markSectionSynced(`${uid}:sessions`);
             },
-            (err) => console.warn(`Sessions sync note (${uid}):`, err.message)
+            (err) => {
+              console.warn(`Sessions sync note (${uid}):`, err.message);
+              markSectionSynced(`${uid}:sessions`);
+            }
           )
         );
 
@@ -1079,8 +1167,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const merged = dedupeById(Array.from(skillsByUid.values()).flat());
               setSkills(merged);
               saveLocal('skills', merged);
+              markSectionSynced(`${uid}:skills`);
             },
-            (err) => console.warn(`Skills sync note (${uid}):`, err.message)
+            (err) => {
+              console.warn(`Skills sync note (${uid}):`, err.message);
+              markSectionSynced(`${uid}:skills`);
+            }
           )
         );
 
@@ -1165,7 +1257,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time Community Threads listener (requires signed-in session; uses deletedByAdmin == false filter)
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setThreads([]);
+      setThreadReplies({});
+      return;
+    }
     let unsubThreads: (() => void) | undefined;
     let isMounted = true;
     try {
@@ -1204,27 +1300,36 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.uid]);
 
-  // Real-time Surgical Stories / Clinical Updates Listener
+  // Real-time Paginated Surgical Stories / Clinical Updates Listener
   useEffect(() => {
     const authUid = auth.currentUser?.uid || user?.uid;
-    if (!authUid) return;
+    if (!authUid) {
+      setStories([]);
+      setHasMoreStories(false);
+      setLoadingMoreStories(false);
+      return;
+    }
     let unsubStories: (() => void) | undefined;
     let isMounted = true;
     try {
       const storiesQuery = query(
         collection(db, 'communityStories'),
         orderBy('createdAt', 'desc'),
-        limit(30)
+        limit(storiesPageSize + 1)
       );
       unsubStories = onSnapshot(
         storiesQuery,
         (snap) => {
           if (!isMounted) return;
+          const hasMore = snap.docs.length > storiesPageSize;
           const loaded = snap.docs
+            .slice(0, storiesPageSize)
             .map(d => ({ ...d.data(), id: d.id }) as CommunityStory)
-            .filter(s => !s.deletedByAdmin)
+            .filter(s => s && !s.deletedByAdmin)
             .sort((a, b) => getTimestampMs(b.createdAtServer || b.createdAt) - getTimestampMs(a.createdAtServer || a.createdAt));
           setStories(loaded);
+          setHasMoreStories(hasMore);
+          setLoadingMoreStories(false);
           safeSetLocalStorage(
             'surgitrack_local_stories',
             loaded.slice(0, 20).map(s => stripLargeInlineData(s, 8_000))
@@ -1233,20 +1338,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (err) => {
           if (isFirestoreQuotaError(err)) setFirestoreQuotaExceeded(true);
           else console.warn('Stories listener:', err.message);
+          setLoadingMoreStories(false);
         }
       );
     } catch (e) {
       console.warn('Stories init error:', e);
+      setLoadingMoreStories(false);
     }
     return () => {
       isMounted = false;
       if (unsubStories) unsubStories();
     };
-  }, [user?.uid]);
+  }, [user?.uid, storiesPageSize]);
 
   // User simulation sessions real-time listener
   useEffect(() => {
-    if (!user?.uid || !currentUid || currentUid === 'local-surgeon-001') return;
+    if (!user?.uid || !currentUid || currentUid === 'local-surgeon-001') {
+      if (!user?.uid) setSimulationSessions([]);
+      return;
+    }
     let unsubSessions: (() => void) | undefined;
     let isMounted = true;
     try {
@@ -1337,13 +1447,53 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Derive live allDoctors with accurate publishedCasesCount from rawDoctors + communityCases without race conditions
+  // Derive live allDoctors with accurate publishedCasesCount & guarantee current signed-in user is always discoverable
   const allDoctors = useMemo(() => {
-    return rawDoctors.map(d => {
+    const mapped = rawDoctors.map(d => {
       const count = communityCases.filter(c => matchDoctorCase(c, d)).length;
       return d.publishedCasesCount === count ? d : { ...d, publishedCasesCount: count };
     });
-  }, [rawDoctors, communityCases]);
+    if (profile && user?.uid && !profile.deletedByAdmin && profile.status !== 'deleted') {
+      const alreadyPresent = mapped.some(
+        d =>
+          d.userId === profile.userId ||
+          d.userId === user.uid ||
+          (d.email && profile.email && d.email.toLowerCase() === profile.email.toLowerCase()) ||
+          d.aliasIds?.includes(user.uid)
+      );
+      if (!alreadyPresent) {
+        const selfSummary: DoctorProfileSummary = {
+          userId: profile.userId || user.uid,
+          email: profile.email,
+          aliasIds: profile.aliasIds || [user.uid],
+          fullName: profile.fullName || 'Surgeon Colleague',
+          academicDegree: profile.medicalQualification || 'MD / MBBS',
+          academicTitle: profile.currentPosition?.includes('Consultant') ? 'Consultant' : 'Dr.',
+          specialty: profile.specialty || 'General Surgery',
+          hospital: (profile.hospitals || '').trim(),
+          profilePhotoUrl: profile.profilePhotoUrl || '',
+          biography: profile.biography || '',
+          followers: profile.followers || [],
+          following: profile.following || [],
+          pendingFollowRequests: profile.pendingFollowRequests || [],
+          followersCount: (profile.followers || []).length,
+          followingCount: (profile.following || []).length,
+          showProgressStats: profile.showProgressStats !== false,
+          showPortfolioToFollowers: profile.showPortfolioToFollowers !== false,
+          requireApprovalToFollow: Boolean(profile.requireApprovalToFollow),
+          totalHours: profile.totalHours || 0,
+          totalProcedures: profile.totalProcedures || 0,
+          verifiedHours: profile.verifiedHours || 0,
+          verifiedProcedures: profile.verifiedProcedures || 0,
+          publishedCasesCount: communityCases.filter(c => matchDoctorCase(c, profile)).length,
+          status: 'active',
+          emailVerified: true,
+        };
+        return [selfSummary, ...mapped];
+      }
+    }
+    return mapped;
+  }, [rawDoctors, communityCases, profile, user?.uid]);
 
   // Statistics calculation (tracks both total documented and supervisor-verified metrics, including surgical clinical cases)
   const stats = useMemo(() => {
@@ -1417,10 +1567,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [cases, trainingRecords, trainingSessions, supervisors, skills]);
 
-  // Auto-sync real documented & verified surgical metrics + published case count across all user's Firestore alias docs
+  // Auto-sync real documented & verified surgical metrics + published case count ONLY after initial cloud sync completes
   useEffect(() => {
     const syncTargets = myUids.filter(id => id && id !== 'local-surgeon-001');
-    if (syncTargets.length === 0 || !navigator.onLine) return;
+    if (!cloudSyncReady || syncTargets.length === 0 || !navigator.onLine) return;
 
     const myPubCount = communityCases.filter(c =>
       matchDoctorCase(c, {
@@ -1462,15 +1612,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedAt: new Date().toISOString(),
         });
 
-        await setDoc(doc(db, 'users', primaryAuthUid), syncPayload, { merge: true }).catch(() => {});
+        for (const targetUid of Array.from(new Set([primaryAuthUid, ...syncTargets]))) {
+          await setDoc(doc(db, 'users', targetUid), syncPayload, { merge: true }).catch(() => {});
+        }
         lastSyncedMetricsRef.current = metricsKey;
       } catch (err) {
         console.warn('Metrics auto-sync warning:', err);
       }
-    }, 800);
+    }, 1200);
 
     return () => clearTimeout(timer);
-  }, [myUidsKey, profile?.email, profile?.fullName, stats.totalHours, stats.verifiedHours, stats.totalProcedures, stats.verifiedProcedures, communityCases]);
+  }, [cloudSyncReady, myUidsKey, profile?.email, profile?.fullName, profile?.totalHours, profile?.verifiedHours, profile?.totalProcedures, profile?.verifiedProcedures, profile?.publishedCasesCount, stats.totalHours, stats.verifiedHours, stats.totalProcedures, stats.verifiedProcedures, communityCases]);
 
   // Helper: Notify ALL eligible followers across all alias UIDs with deterministic ID (prevents missed alerts or duplicates)
   const notifyFollowersOfPublishedCase = async (publishedCase: ClinicalCase) => {
@@ -3120,11 +3272,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecommendations(updated);
     saveLocal('recommendations', updated);
 
-    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
-      try {
-        await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'recommendations', id), newRec);
-      } catch (err) {
-        console.warn('Saved recommendation locally:', err);
+    const effectiveUid = auth.currentUser?.uid || profile?.userId || currentUid;
+    if (effectiveUid !== 'local-surgeon-001') {
+      if (!navigator.onLine) {
+        enqueueOfflineAction({ id, type: 'recommendation', action: 'create', data: newRec, timestamp: new Date().toISOString() });
+      } else {
+        try {
+          await setDoc(doc(db, 'users', effectiveUid, 'recommendations', id), newRec);
+        } catch (err) {
+          console.warn('Saved recommendation locally, queued for sync:', err);
+          enqueueOfflineAction({ id, type: 'recommendation', action: 'create', data: newRec, timestamp: new Date().toISOString() });
+        }
       }
     }
     return id;
@@ -3135,11 +3293,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecommendations(updated);
     saveLocal('recommendations', updated);
 
-    if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001') {
-      try {
-        await deleteDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'recommendations', id));
-      } catch (err) {
-        console.warn('Deleted recommendation locally:', err);
+    const effectiveUid = auth.currentUser?.uid || profile?.userId || currentUid;
+    if (effectiveUid !== 'local-surgeon-001') {
+      if (!navigator.onLine) {
+        enqueueOfflineAction({ id, type: 'recommendation', action: 'delete', timestamp: new Date().toISOString() });
+      } else {
+        try {
+          await deleteDoc(doc(db, 'users', effectiveUid, 'recommendations', id));
+        } catch (err) {
+          console.warn('Deleted recommendation locally, queued for sync:', err);
+          enqueueOfflineAction({ id, type: 'recommendation', action: 'delete', timestamp: new Date().toISOString() });
+        }
       }
     }
   };
@@ -3147,24 +3311,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Articles bookmarking (persisted locally and synced to Firestore)
   const toggleSaveArticle = async (article: any) => {
     const existing = savedArticles.find(a => a.id === article.id);
+    const effectiveUid = auth.currentUser?.uid || profile?.userId || currentUid;
     let updated: SavedArticle[];
     if (existing) {
       updated = savedArticles.filter(a => a.id !== article.id);
-      if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001' && navigator.onLine) {
-        for (const uid of myUids) {
-          if (uid === 'local-surgeon-001') continue;
-          await deleteDoc(doc(db, 'users', uid, 'savedArticles', article.id)).catch(() => {});
+      if (effectiveUid !== 'local-surgeon-001') {
+        if (!navigator.onLine) {
+          enqueueOfflineAction({ id: article.id, type: 'article', action: 'delete', timestamp: new Date().toISOString() });
+        } else {
+          try {
+            for (const uid of myUids) {
+              if (uid === 'local-surgeon-001') continue;
+              await deleteDoc(doc(db, 'users', uid, 'savedArticles', article.id));
+            }
+          } catch {
+            enqueueOfflineAction({ id: article.id, type: 'article', action: 'delete', timestamp: new Date().toISOString() });
+          }
         }
       }
     } else {
       const newArticle: SavedArticle = cleanPayload({
         ...article,
-        userId: (auth.currentUser?.uid || profile?.userId || currentUid),
+        userId: effectiveUid,
         savedAt: new Date().toISOString(),
       });
       updated = [newArticle, ...savedArticles];
-      if ((auth.currentUser?.uid || profile?.userId || currentUid) !== 'local-surgeon-001' && navigator.onLine) {
-        await setDoc(doc(db, 'users', (auth.currentUser?.uid || profile?.userId || currentUid), 'savedArticles', article.id), newArticle, { merge: true }).catch(() => {});
+      if (effectiveUid !== 'local-surgeon-001') {
+        if (!navigator.onLine) {
+          enqueueOfflineAction({ id: article.id, type: 'article', action: 'create', data: newArticle, timestamp: new Date().toISOString() });
+        } else {
+          try {
+            await setDoc(doc(db, 'users', effectiveUid, 'savedArticles', article.id), newArticle, { merge: true });
+          } catch {
+            enqueueOfflineAction({ id: article.id, type: 'article', action: 'create', data: newArticle, timestamp: new Date().toISOString() });
+          }
+        }
       }
     }
     setSavedArticles(updated);
@@ -3566,34 +3747,45 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // === Surgical Community Stories CRUD ===
-  const createStory = async (storyData: {
+  const createCommunityStory = async (storyData: {
     title: string;
     content: string;
     category: CommunityStory['category'];
+    imageFile?: File | null;
     imageUrl?: string;
     relatedCaseId?: string;
   }): Promise<string> => {
-    const uid = auth.currentUser?.uid || currentUid;
+    const uid = auth.currentUser?.uid || user?.uid || currentUid;
+    if (!uid || uid === 'local-surgeon-001') {
+      throw new Error('Authentication required to share a surgical update or story.');
+    }
+    const cleanTitle = (storyData.title || '').trim();
+    const cleanContent = (storyData.content || '').trim();
+    if (!cleanTitle || !cleanContent) {
+      throw new Error('Title and content are required.');
+    }
     const storyId = `story_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
 
     let finalImageUrl = storyData.imageUrl || '';
-    if (finalImageUrl && finalImageUrl.startsWith('data:') && uid && uid !== 'local-surgeon-001') {
+    if (storyData.imageFile) {
+      finalImageUrl = await uploadMediaToStorage(uid, 'stories', storyData.imageFile, storyId);
+    } else if (finalImageUrl && finalImageUrl.startsWith('data:')) {
       finalImageUrl = await uploadMediaToStorage(uid, 'stories', finalImageUrl, storyId).catch(() => finalImageUrl);
     }
 
     const localStory: CommunityStory = cleanPayload({
       id: storyId,
       authorId: uid,
-      authorName: profile?.fullName || user?.displayName || 'Surgeon',
+      authorName: (profile?.fullName || user?.displayName || 'Colleague Surgeon').trim(),
       authorSpecialty: profile?.specialty || 'General Surgery',
-      authorHospital: profile?.hospitals || 'University Medical Center',
+      authorHospital: (profile?.hospitals || '').trim(),
       authorPhotoUrl: profile?.profilePhotoUrl || '',
-      title: storyData.title.trim(),
-      content: storyData.content.trim(),
+      title: cleanTitle.slice(0, 200),
+      content: cleanContent.slice(0, 5000),
       category: storyData.category,
-      imageUrl: finalImageUrl || undefined,
-      relatedCaseId: storyData.relatedCaseId || undefined,
+      ...(finalImageUrl ? { imageUrl: finalImageUrl } : {}),
+      ...(storyData.relatedCaseId ? { relatedCaseId: storyData.relatedCaseId } : {}),
       likedByUserIds: [],
       likesCount: 0,
       viewedByUserIds: [uid],
@@ -3609,20 +3801,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (uid && uid !== 'local-surgeon-001' && navigator.onLine) {
+    if (navigator.onLine) {
       await setDoc(doc(db, 'communityStories', storyId), cleanPayload({
         ...localStory,
         createdAtServer: serverTimestamp(),
       }));
 
-      const followerIds = Array.from(new Set(profile?.followers || [])).filter(fid => fid && !myUids.includes(fid));
+      const selfDoc = allDoctors.find(d => d.userId === uid || d.aliasIds?.includes(uid));
+      const followerIds = Array.from(
+        new Set([...(profile?.followers || []), ...(selfDoc?.followers || [])])
+      ).filter(fid => fid && !myUids.includes(fid) && fid !== uid);
       for (const fid of followerIds.slice(0, 25)) {
         const resolvedFollower = allDoctors.find(d => d.userId === fid || d.aliasIds?.includes(fid));
         const recipientUid = resolvedFollower?.userId || fid;
         await dispatchNotification(
           {
-            title: 'New Surgical Story Shared',
-            message: `${localStory.authorName} shared a surgical update: "${localStory.title}"`,
+            title: 'New Surgical Update Shared',
+            message: `${localStory.authorName} shared a new ${storyData.category.replace('_', ' ')}: "${localStory.title}"`,
             category: 'social',
             type: 'new_story',
             senderUserId: uid,
@@ -3630,14 +3825,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             senderPhotoUrl: localStory.authorPhotoUrl || '',
             targetUserId: recipientUid,
             targetStoryId: storyId,
-            navigationRef: '/community',
+            navigationRef: `/community/story/${storyId}`,
           },
           `notif_story_${storyId}_${recipientUid}`
         );
       }
     }
+
     return storyId;
   };
+  const createStory = createCommunityStory;
 
   const toggleLikeStory = async (storyId: string) => {
     const uid = auth.currentUser?.uid || currentUid;
@@ -3699,15 +3896,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteStory = async (storyId: string) => {
+  const deleteCommunityStory = async (storyId: string) => {
     const uid = auth.currentUser?.uid || currentUid;
     const target = stories.find(s => s.id === storyId);
     if (!target) return;
+    const isAdmin =
+      profile?.role === 'super_admin' ||
+      user?.email?.toLowerCase().trim() === 'zeadmorud2030@gmail.com';
+    if (!isAdmin && target.authorId !== uid && !myUids.includes(target.authorId)) {
+      throw new Error('Permission denied: Only the author can delete this update.');
+    }
     setStories(prev => prev.filter(s => s.id !== storyId));
     if (uid !== 'local-surgeon-001' && navigator.onLine) {
       await deleteDoc(doc(db, 'communityStories', storyId));
     }
   };
+  const deleteStory = deleteCommunityStory;
 
   // Full Restore (local + Firestore persistence)
   const restorePortfolioData = async (data: any) => {
@@ -3797,10 +4001,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hasMoreDoctors,
         loadingMoreDoctors,
         loadMoreDoctors,
+        communityStories: stories,
         stories,
+        hasMoreStories,
+        loadingMoreStories,
+        loadMoreStories,
+        createCommunityStory,
         createStory,
         toggleLikeStory,
         markStoryViewed,
+        deleteCommunityStory,
         deleteStory,
         syncStatus,
         hasMoreCommunityCases,

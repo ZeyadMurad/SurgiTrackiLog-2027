@@ -5,7 +5,7 @@
 // Clinical data itself is persisted client-side (Firestore persistent cache +
 // localStorage), so the logbook stays readable offline.
 
-const CACHE = 'surgitrack-pro-v2';
+const CACHE = 'surgitrack-pro-v3';
 const CORE_ASSETS = [
   '/',
   '/index.html',

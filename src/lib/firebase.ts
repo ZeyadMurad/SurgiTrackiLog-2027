@@ -22,6 +22,7 @@ import {
   deleteObject,
 } from 'firebase/storage';
 import firebaseConfigFallback from '../../firebase-applet-config.json';
+import { compressImageFileToDataUrl } from './imageUtils';
 
 /**
  * SECURITY: Firebase credentials are read from environment variables (.env file,
@@ -116,8 +117,22 @@ export async function uploadMediaToStorage(
   fileOrDataUrl: File | string,
   fileNamePrefix: string = 'media'
 ): Promise<string> {
+  let preparedDataUrl: string | null = null;
+  if (typeof fileOrDataUrl !== 'string' && fileOrDataUrl.type?.startsWith('image/')) {
+    try {
+      preparedDataUrl = await compressImageFileToDataUrl(fileOrDataUrl, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxOutputBytes: 420_000,
+      });
+    } catch {
+      preparedDataUrl = null;
+    }
+  }
+
   const bucketConfigured = Boolean(firebaseConfig.storageBucket);
   if (!uid || uid === 'local-surgeon-001' || !bucketConfigured || !navigator.onLine) {
+    if (preparedDataUrl) return preparedDataUrl;
     if (typeof fileOrDataUrl === 'string') return fileOrDataUrl;
     throw new Error('Cannot upload binary file while offline');
   }
@@ -127,12 +142,14 @@ export async function uploadMediaToStorage(
   const refObj = storageRef(storage, path);
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Storage upload timeout')), 4500)
+    setTimeout(() => reject(new Error('Storage upload timeout')), 12000)
   );
 
   try {
     const uploadTask = (async () => {
-      if (typeof fileOrDataUrl === 'string') {
+      if (preparedDataUrl) {
+        await uploadString(refObj, preparedDataUrl, 'data_url');
+      } else if (typeof fileOrDataUrl === 'string') {
         if (!fileOrDataUrl.startsWith('data:')) return fileOrDataUrl;
         await uploadString(refObj, fileOrDataUrl, 'data_url');
       } else {
@@ -146,6 +163,7 @@ export async function uploadMediaToStorage(
     return await Promise.race([uploadTask, timeoutPromise]);
   } catch (err) {
     console.warn('[SurgiTrack Storage] Falling back to inline compressed media:', (err as any)?.message || err);
+    if (preparedDataUrl) return preparedDataUrl;
     if (typeof fileOrDataUrl === 'string') {
       return fileOrDataUrl;
     }

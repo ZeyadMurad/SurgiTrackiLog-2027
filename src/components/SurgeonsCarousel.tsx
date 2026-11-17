@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, UserPlus, UserCheck, Users, Search, Filter, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, UserPlus, UserCheck, Users, Search, Filter, Clock, Loader2 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { translations } from '../lib/i18n';
@@ -11,7 +11,14 @@ interface SurgeonsCarouselProps {
 }
 
 export const SurgeonsCarousel: React.FC<SurgeonsCarouselProps> = ({ onSelectDoctor }) => {
-  const { allDoctors, toggleFollowDoctor, communityCases, hasMoreDoctors, loadingMoreDoctors, loadMoreDoctors } = useData();
+  const {
+    allDoctors,
+    toggleFollowDoctor,
+    communityCases,
+    hasMoreDoctors,
+    loadingMoreDoctors,
+    loadMoreDoctors,
+  } = useData();
   const { profile, user, language, myUids: authUids } = useAuth();
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
@@ -263,13 +270,19 @@ export const SurgeonsCarousel: React.FC<SurgeonsCarouselProps> = ({ onSelectDoct
               type="button"
               onClick={loadMoreDoctors}
               disabled={loadingMoreDoctors}
-              className="shrink-0 w-36 bg-teal-50/70 hover:bg-teal-100/80 border border-dashed border-teal-300 rounded-2xl p-3 flex flex-col items-center justify-center text-center gap-1.5 transition cursor-pointer disabled:opacity-60"
+              className="shrink-0 w-36 bg-teal-50/70 hover:bg-teal-100/80 border border-dashed border-teal-300 rounded-2xl p-3 flex flex-col items-center justify-center text-center gap-2 text-teal-800 transition cursor-pointer disabled:opacity-60"
             >
-              <span className="text-xs font-bold text-teal-800">
-                {loadingMoreDoctors ? (isRTL ? 'جارٍ التحميل...' : 'Loading...') : (isRTL ? 'عرض المزيد' : 'Load More')}
-              </span>
-              <span className="text-[10px] text-teal-700">
-                {isRTL ? 'أطباء وجراحون' : 'Surgeons'}
+              <div className="w-10 h-10 rounded-full bg-white border border-teal-200 flex items-center justify-center shadow-2xs">
+                {loadingMoreDoctors ? (
+                  <Loader2 size={16} className="animate-spin text-teal-600" />
+                ) : (
+                  <Users size={16} className="text-teal-700" />
+                )}
+              </div>
+              <span className="text-[11px] font-bold leading-tight">
+                {loadingMoreDoctors
+                  ? (isRTL ? 'جاري التحميل...' : 'Loading...')
+                  : (isRTL ? 'عرض المزيد من الزملاء' : 'Load More Colleagues')}
               </span>
             </button>
           )}

@@ -81,6 +81,14 @@ const LOCAL_PROFILE_KEY = 'surgitrack_active_profile';
 const LOCAL_LANG_KEY = 'surgitrack_lang';
 const LOCAL_NOTIFS_KEY = 'surgitrack_notifications';
 const LOCAL_REPLIES_KEY = 'surgitrack_notification_replies';
+const PROFILE_UID_CACHE_PREFIX = 'surgitrack_profile_';
+
+function saveActiveProfileCaches(prof: UserProfile) {
+  saveActiveProfileCaches(prof);
+  if (prof.userId && prof.userId !== 'local-surgeon-001') {
+    safeSetLocalStorage(PROFILE_UID_CACHE_PREFIX + prof.userId, prof);
+  }
+}
 const SUPER_ADMIN_EMAIL = 'zeadmorud2030@gmail.com';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -234,8 +242,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const richestHospital =
         (baseProfile.hospitals && baseProfile.hospitals !== 'University Medical Center' ? baseProfile.hospitals : '') ||
         matchingDocs.find(m => m.hospitals && m.hospitals !== 'University Medical Center')?.hospitals ||
-        baseProfile.hospitals ||
-        'University Medical Center';
+        (baseProfile.hospitals && baseProfile.hospitals !== 'University Medical Center' ? baseProfile.hospitals : '') ||
+        '';
 
       const richestSpecialty =
         (baseProfile.specialty && baseProfile.specialty !== 'General Surgery' ? baseProfile.specialty : '') ||
@@ -341,7 +349,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!currentUser) {
           setUser(null);
           setProfile(null);
+          setNotifications([]);
+          setNotificationReplies([]);
           localStorage.removeItem(LOCAL_PROFILE_KEY);
+          localStorage.removeItem(LOCAL_NOTIFS_KEY);
+          localStorage.removeItem(LOCAL_REPLIES_KEY);
           setLoading(false);
           return;
         }
@@ -377,7 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             data = await unifyEmailProfile(data, currentUser.uid);
             setProfile(data);
-            safeSetLocalStorage(LOCAL_PROFILE_KEY, data);
+            saveActiveProfileCaches(data);
           } else {
             // Check tombstone before reconstructing
             const tombSnap = await getDoc(doc(db, 'deleted_users', currentUser.uid)).catch(() => null);
@@ -401,7 +413,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               medicalQualification: 'MD / MBBS',
               currentPosition: 'Surgical Trainee',
               specialty: 'General Surgery',
-              hospitals: 'University Medical Center',
+              hospitals: '',
               biography: '',
               profilePhotoUrl: currentUser.photoURL || '',
               role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
@@ -415,13 +427,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const recovered = await unifyEmailProfile(fallbackProf, currentUser.uid);
             await setDoc(userDocRef, cleanPayload(recovered), { merge: true }).catch(() => {});
             setProfile(recovered);
-            safeSetLocalStorage(LOCAL_PROFILE_KEY, recovered);
+            saveActiveProfileCaches(recovered);
           }
         } catch (err) {
           console.warn('Firestore profile fetch error:', err);
-          // Graceful cache fallback ONLY when Firebase Auth session is genuinely active
+          // Graceful per-UID cache fallback ONLY when Firebase Auth session is genuinely active
           try {
-            const cached = localStorage.getItem(LOCAL_PROFILE_KEY);
+            const cached =
+              localStorage.getItem(PROFILE_UID_CACHE_PREFIX + currentUser.uid) ||
+              localStorage.getItem(LOCAL_PROFILE_KEY);
             if (cached) {
               const p = JSON.parse(cached) as UserProfile;
               if (p.userId === currentUser.uid || p.aliasIds?.includes(currentUser.uid)) {
@@ -516,7 +530,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 prev.publishedCasesCount === merged.publishedCasesCount;
 
               if (unchanged) return prev;
-              safeSetLocalStorage(LOCAL_PROFILE_KEY, merged);
+              saveActiveProfileCaches(merged);
               return merged;
             });
           }
@@ -838,7 +852,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           medicalQualification: 'MD / MBBS',
           currentPosition: 'Surgical Trainee',
           specialty: 'General Surgery',
-          hospitals: 'University Medical Center',
+          hospitals: '',
           biography: 'Surgical trainee portfolio.',
           profilePhotoUrl: u.photoURL || '',
           role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
@@ -857,7 +871,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       await setDoc(ref, cleanPayload(userProf), { merge: true });
       setProfile(userProf);
-      safeSetLocalStorage(LOCAL_PROFILE_KEY, userProf);
+      saveActiveProfileCaches(userProf);
     } catch (err: any) {
       if (err?.message?.includes('حذف حسابك') || err?.message?.includes('deleted by the administration')) {
         throw err;
@@ -923,7 +937,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         medicalQualification: rest.medicalQualification || 'MD / MBBS',
         currentPosition: rest.currentPosition || 'Surgical Trainee',
         specialty: rest.specialty || 'General Surgery',
-        hospitals: rest.hospitals || 'University Medical Center',
+        hospitals: rest.hospitals || '',
         biography: rest.biography || '',
         profilePhotoUrl: finalPhotoUrl,
         role: isAdmin ? 'super_admin' : 'normal_user',
@@ -945,7 +959,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(credUser);
       setProfile(finalProfile);
-      safeSetLocalStorage(LOCAL_PROFILE_KEY, finalProfile);
+      saveActiveProfileCaches(finalProfile);
     } finally {
       registeringUidRef.current = null;
     }
@@ -1003,7 +1017,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           medicalQualification: 'MD / MBBS',
           currentPosition: 'Surgical Trainee',
           specialty: 'General Surgery',
-          hospitals: 'University Medical Center',
+          hospitals: '',
           biography: '',
           profilePhotoUrl: u.photoURL || '',
           role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
@@ -1022,7 +1036,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       await setDoc(ref, cleanPayload(unified), { merge: true });
       setProfile(unified);
-      safeSetLocalStorage(LOCAL_PROFILE_KEY, unified);
+      saveActiveProfileCaches(unified);
     } catch (err: any) {
       if (err?.message?.includes('إدارة الموقع') || err?.message?.includes('deleted by the administration')) {
         throw err;
@@ -1083,7 +1097,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setUser(null);
     setProfile(null);
+    setNotifications([]);
+    setNotificationReplies([]);
     localStorage.removeItem(LOCAL_PROFILE_KEY);
+    localStorage.removeItem(LOCAL_NOTIFS_KEY);
+    localStorage.removeItem(LOCAL_REPLIES_KEY);
   };
 
   const dismissDeletedAccountModal = () => {
@@ -1112,7 +1130,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setUser(null);
     setProfile(null);
+    setNotifications([]);
+    setNotificationReplies([]);
+    if (uid) {
+      localStorage.removeItem(PROFILE_UID_CACHE_PREFIX + uid);
+    }
     localStorage.removeItem(LOCAL_PROFILE_KEY);
+    localStorage.removeItem(LOCAL_NOTIFS_KEY);
+    localStorage.removeItem(LOCAL_REPLIES_KEY);
   };
 
   const patchProfileLocal = (updates: Partial<UserProfile>) => {
@@ -1123,7 +1148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...updates,
         updatedAt: new Date().toISOString(),
       };
-      safeSetLocalStorage(LOCAL_PROFILE_KEY, merged);
+      saveActiveProfileCaches(merged);
       return merged;
     });
   };
@@ -1138,7 +1163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...partialPatch,
     };
     setProfile(updated);
-    safeSetLocalStorage(LOCAL_PROFILE_KEY, updated);
+    saveActiveProfileCaches(updated);
 
     const targetUid = auth.currentUser?.uid || updated.userId;
     if (!targetUid) return;

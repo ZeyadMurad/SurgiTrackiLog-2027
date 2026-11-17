@@ -25,7 +25,6 @@ import {
   WifiOff,
   RefreshCw,
   Plus,
-  AlertTriangle,
   BookOpen,
   Bell,
   Send,
@@ -79,8 +78,6 @@ import { translations } from './lib/i18n';
 import {
   getCasePublishTimestampMs,
   getTimestampMs,
-  FIRESTORE_QUOTA_UPGRADE_URL,
-  formatFirestoreQuotaUserMessage,
 } from './lib/firebase';
 
 type ActiveView =
@@ -136,8 +133,6 @@ function SurgiTrackApp() {
     communityCases,
     allDoctors,
     viewedCommunityCaseIds,
-    firestoreQuotaExceeded,
-    dismissQuotaWarning,
     acceptFollowRequest,
     declineFollowRequest,
     skills,
@@ -1009,38 +1004,6 @@ function SurgiTrackApp() {
 
         {/* Dynamic Main Viewport */}
         <main className="flex-1 min-w-0 pb-28">
-          {/* Firestore Daily Read Quota Notice (Dismissible) */}
-          {firestoreQuotaExceeded && (
-            <div className="mb-4 bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl px-4 py-3 shadow-xs flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
-                  <AlertTriangle size={17} />
-                </div>
-                <p className="text-xs font-medium leading-relaxed text-amber-900">
-                  {formatFirestoreQuotaUserMessage(language)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={FIRESTORE_QUOTA_UPGRADE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl transition shadow-2xs"
-                >
-                  {isRTL ? 'إدارة حصة Firebase' : language === 'de' ? 'Firebase-Kontingent verwalten' : 'Manage Firebase Quota'}
-                </a>
-                <button
-                  type="button"
-                  onClick={dismissQuotaWarning}
-                  className="p-1.5 rounded-lg text-amber-700 hover:bg-amber-200/60 transition cursor-pointer"
-                  aria-label="Dismiss quota notice"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Live Clickable Community New-Case Alert Banner */}
           {activeView !== 'community' && latestUnseenFollowedCase && dismissedBannerCaseId !== latestUnseenFollowedCase.id && (
             <div className="mb-4 bg-gradient-to-r from-[#101C32] to-[#0E4646] text-white rounded-2xl border border-teal-500/40 px-4 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 animate-fadeIn">

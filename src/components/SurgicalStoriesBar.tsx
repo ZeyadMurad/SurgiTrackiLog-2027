@@ -28,6 +28,9 @@ const STORY_CATEGORY_LABELS: Record<CommunityStory['category'], { en: string; ar
   operative_tip: { en: 'Operative Tip', ar: 'نصيحة جراحية' },
   case_update: { en: 'Case Update', ar: 'تحديث حالة' },
   milestone: { en: 'Surgical Milestone', ar: 'إنجاز تدريبي' },
+  or_moment: { en: 'OR Moment', ar: 'لحظة عمليات' },
+  research_note: { en: 'Research Note', ar: 'ملاحظة بحثية' },
+  technique: { en: 'Technique', ar: 'تقنية جراحية' },
 };
 
 export const SurgicalStoriesBar: React.FC<SurgicalStoriesBarProps> = ({ onSelectDoctorById, focusedStoryId, onClearFocusedStory }) => {
