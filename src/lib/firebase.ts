@@ -94,17 +94,20 @@ export const storage = getStorage(app);
 
 // Explicitly enforce durable multi-tab browser persistence so Firebase Auth sessions
 // survive page refreshes, tab switches, browser restarts, and deployments.
-export const authPersistenceReady: Promise<void> = (async () => {
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch {
+export const authPersistenceReady: Promise<void> = Promise.race([
+  (async () => {
     try {
-      await setPersistence(auth, indexedDBLocalPersistence);
+      await setPersistence(auth, browserLocalPersistence);
     } catch {
-      // Memory persistence fallback
+      try {
+        await setPersistence(auth, indexedDBLocalPersistence);
+      } catch {
+        // Memory persistence fallback
+      }
     }
-  }
-})();
+  })(),
+  new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+]);
 
 /**
  * Upload a compressed media Data URL or File to Firebase Storage under users/{uid}/...

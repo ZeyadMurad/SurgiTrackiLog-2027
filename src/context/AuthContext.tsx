@@ -84,10 +84,44 @@ const LOCAL_REPLIES_KEY = 'surgitrack_notification_replies';
 const PROFILE_UID_CACHE_PREFIX = 'surgitrack_profile_';
 
 function saveActiveProfileCaches(prof: UserProfile) {
-  saveActiveProfileCaches(prof);
+  safeSetLocalStorage(LOCAL_PROFILE_KEY, prof);
   if (prof.userId && prof.userId !== 'local-surgeon-001') {
     safeSetLocalStorage(PROFILE_UID_CACHE_PREFIX + prof.userId, prof);
   }
+}
+
+function readCachedProfileForUid(uid: string, email?: string | null): UserProfile | null {
+  try {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const candidates = [
+      localStorage.getItem(PROFILE_UID_CACHE_PREFIX + uid),
+      localStorage.getItem(LOCAL_PROFILE_KEY),
+    ];
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as UserProfile;
+      if (
+        parsed &&
+        (parsed.userId === uid ||
+          parsed.aliasIds?.includes(uid) ||
+          (cleanEmail && parsed.email?.toLowerCase().trim() === cleanEmail))
+      ) {
+        return { ...parsed, status: 'active', emailVerified: true };
+      }
+    }
+  } catch {
+    // ignore malformed cache
+  }
+  return null;
+}
+
+function withAuthTimeout<T>(promise: Promise<T>, ms: number = 4000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('__AUTH_STARTUP_TIMEOUT__')), ms)
+    ),
+  ]);
 }
 const SUPER_ADMIN_EMAIL = 'zeadmorud2030@gmail.com';
 
@@ -338,122 +372,151 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Monitor genuine Firebase Auth session (backed by browserLocalPersistence)
   useEffect(() => {
-    let unsubAuth: (() => void) | undefined;
     let active = true;
+    authPersistenceReady.catch(() => {});
 
-    authPersistenceReady.finally(() => {
+    // Safety guard: never allow startup splash screen to freeze indefinitely
+    const safetyTimer = window.setTimeout(() => {
+      if (active) setLoading(false);
+    }, 4500);
+
+    const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!active) return;
-      unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        setUser(null);
+        setProfile(null);
+        setNotifications([]);
+        setNotificationReplies([]);
+        localStorage.removeItem(LOCAL_PROFILE_KEY);
+        localStorage.removeItem(LOCAL_NOTIFS_KEY);
+        localStorage.removeItem(LOCAL_REPLIES_KEY);
+        window.clearTimeout(safetyTimer);
+        setLoading(false);
+        return;
+      }
+
+      // If registerWithEmail is currently writing the initial user doc, let it finish cleanly
+      if (registeringUidRef.current === currentUser.uid) {
+        setUser(currentUser);
+        window.clearTimeout(safetyTimer);
+        setLoading(false);
+        return;
+      }
+
+      setUser(currentUser);
+      const cleanEmail = (currentUser.email || '').trim().toLowerCase();
+
+      // Hydrate immediately from per-UID cache so UI renders without waiting on Firestore
+      const cachedProfile = readCachedProfileForUid(currentUser.uid, currentUser.email);
+      if (cachedProfile) {
+        setProfile(cachedProfile);
+        window.clearTimeout(safetyTimer);
+        setLoading(false);
+      }
+
+      try {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const docSnap = await withAuthTimeout(getDoc(userDocRef), 4000);
         if (!active) return;
 
-        if (!currentUser) {
-          setUser(null);
-          setProfile(null);
-          setNotifications([]);
-          setNotificationReplies([]);
-          localStorage.removeItem(LOCAL_PROFILE_KEY);
-          localStorage.removeItem(LOCAL_NOTIFS_KEY);
-          localStorage.removeItem(LOCAL_REPLIES_KEY);
-          setLoading(false);
-          return;
-        }
-
-        // If registerWithEmail is currently writing the initial user doc, let it finish cleanly
-        if (registeringUidRef.current === currentUser.uid) {
-          setUser(currentUser);
-          setLoading(false);
-          return;
-        }
-
-        setUser(currentUser);
-        const cleanEmail = (currentUser.email || '').trim().toLowerCase();
-
-        try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const docSnap = await getDoc(userDocRef);
-
-          if (docSnap.exists()) {
-            let data = docSnap.data() as UserProfile;
-            if (data.deletedByAdmin || data.status === 'deleted') {
-              setAccountDeletedByAdmin(true);
-              await fbSignOut(auth).catch(() => {});
-              setUser(null);
-              setProfile(null);
-              localStorage.removeItem(LOCAL_PROFILE_KEY);
-              setLoading(false);
-              return;
-            }
-            if (cleanEmail === SUPER_ADMIN_EMAIL && data.role !== 'super_admin') {
-              data.role = 'super_admin';
-              await setDoc(userDocRef, { role: 'super_admin', status: 'active', emailVerified: true }, { merge: true }).catch(() => {});
-            }
-            data = await unifyEmailProfile(data, currentUser.uid);
-            setProfile(data);
-            saveActiveProfileCaches(data);
-          } else {
-            // Check tombstone before reconstructing
-            const tombSnap = await getDoc(doc(db, 'deleted_users', currentUser.uid)).catch(() => null);
-            if (tombSnap?.exists()) {
-              setAccountDeletedByAdmin(true);
-              await fbSignOut(auth).catch(() => {});
-              setUser(null);
-              setProfile(null);
-              localStorage.removeItem(LOCAL_PROFILE_KEY);
-              setLoading(false);
-              return;
-            }
-
-            // Recover or synthesize permanent user doc if missing
-            const fallbackProf: UserProfile = {
-              userId: currentUser.uid,
-              aliasIds: [currentUser.uid],
-              fullName: currentUser.displayName || 'Surgeon Trainee',
-              email: cleanEmail,
-              country: 'Germany',
-              medicalQualification: 'MD / MBBS',
-              currentPosition: 'Surgical Trainee',
-              specialty: 'General Surgery',
-              hospitals: '',
-              biography: '',
-              profilePhotoUrl: currentUser.photoURL || '',
-              role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
-              preferredLanguage: language,
-              theme: 'light',
-              emailVerified: true,
-              status: 'active',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-            const recovered = await unifyEmailProfile(fallbackProf, currentUser.uid);
-            await setDoc(userDocRef, cleanPayload(recovered), { merge: true }).catch(() => {});
-            setProfile(recovered);
-            saveActiveProfileCaches(recovered);
+        if (docSnap.exists()) {
+          let data = docSnap.data() as UserProfile;
+          if (data.deletedByAdmin || data.status === 'deleted') {
+            setAccountDeletedByAdmin(true);
+            await fbSignOut(auth).catch(() => {});
+            setUser(null);
+            setProfile(null);
+            localStorage.removeItem(LOCAL_PROFILE_KEY);
+            window.clearTimeout(safetyTimer);
+            setLoading(false);
+            return;
           }
-        } catch (err) {
-          console.warn('Firestore profile fetch error:', err);
-          // Graceful per-UID cache fallback ONLY when Firebase Auth session is genuinely active
-          try {
-            const cached =
-              localStorage.getItem(PROFILE_UID_CACHE_PREFIX + currentUser.uid) ||
-              localStorage.getItem(LOCAL_PROFILE_KEY);
-            if (cached) {
-              const p = JSON.parse(cached) as UserProfile;
-              if (p.userId === currentUser.uid || p.aliasIds?.includes(currentUser.uid)) {
-                setProfile({ ...p, status: 'active', emailVerified: true });
-              }
-            }
-          } catch {
-            // ignore
+          if (cleanEmail === SUPER_ADMIN_EMAIL && data.role !== 'super_admin') {
+            data.role = 'super_admin';
+            setDoc(userDocRef, { role: 'super_admin', status: 'active', emailVerified: true }, { merge: true }).catch(() => {});
           }
-        } finally {
-          setLoading(false);
+          data = await withAuthTimeout(unifyEmailProfile(data, currentUser.uid), 4000).catch(() => data);
+          if (!active) return;
+          setProfile(data);
+          saveActiveProfileCaches(data);
+        } else {
+          // Check tombstone before reconstructing
+          const tombSnap = await withAuthTimeout(getDoc(doc(db, 'deleted_users', currentUser.uid)), 3000).catch(() => null);
+          if (tombSnap?.exists()) {
+            setAccountDeletedByAdmin(true);
+            await fbSignOut(auth).catch(() => {});
+            setUser(null);
+            setProfile(null);
+            localStorage.removeItem(LOCAL_PROFILE_KEY);
+            window.clearTimeout(safetyTimer);
+            setLoading(false);
+            return;
+          }
+          // Recover or synthesize permanent user doc if missing
+          const fallbackProf: UserProfile = {
+            userId: currentUser.uid,
+            aliasIds: [currentUser.uid],
+            fullName: currentUser.displayName || 'Surgeon Trainee',
+            email: cleanEmail,
+            country: 'Germany',
+            medicalQualification: 'MD / MBBS',
+            currentPosition: 'Surgical Trainee',
+            specialty: 'General Surgery',
+            hospitals: '',
+            biography: '',
+            profilePhotoUrl: currentUser.photoURL || '',
+            role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
+            preferredLanguage: language,
+            theme: 'light',
+            emailVerified: true,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          const recovered = await withAuthTimeout(unifyEmailProfile(fallbackProf, currentUser.uid), 4000).catch(
+            () => fallbackProf
+          );
+          setDoc(userDocRef, cleanPayload(recovered), { merge: true }).catch(() => {});
+          if (!active) return;
+          setProfile(recovered);
+          saveActiveProfileCaches(recovered);
         }
-      });
+      } catch (err) {
+        console.warn('Firestore profile fetch fallback:', err);
+        if (!cachedProfile && active) {
+          const fallbackProf: UserProfile = {
+            userId: currentUser.uid,
+            aliasIds: [currentUser.uid],
+            fullName: currentUser.displayName || cleanEmail.split('@')[0] || 'Surgeon Trainee',
+            email: cleanEmail,
+            country: 'Germany',
+            medicalQualification: 'MD / MBBS',
+            currentPosition: 'Surgical Trainee',
+            specialty: 'General Surgery',
+            hospitals: '',
+            biography: '',
+            profilePhotoUrl: currentUser.photoURL || '',
+            role: cleanEmail === SUPER_ADMIN_EMAIL ? 'super_admin' : 'normal_user',
+            preferredLanguage: language,
+            theme: 'light',
+            emailVerified: true,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          setProfile(fallbackProf);
+          saveActiveProfileCaches(fallbackProf);
+        }
+      } finally {
+        window.clearTimeout(safetyTimer);
+        if (active) setLoading(false);
+      }
     });
 
     return () => {
       active = false;
-      if (unsubAuth) unsubAuth();
+      window.clearTimeout(safetyTimer);
+      unsubAuth();
     };
   }, []);
 
