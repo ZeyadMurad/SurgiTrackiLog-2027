@@ -379,7 +379,7 @@ export interface AppNotification {
   title: string;
   message: string;
   category: 'general' | 'urgent' | 'clinical' | 'administrative' | 'social' | 'announcement' | 'maintenance' | 'update';
-  type?: 'new_follower' | 'follow_request' | 'follow_accepted' | 'follow_rejected' | 'new_like' | 'new_comment' | 'new_case' | 'new_story' | 'admin_broadcast';
+  type?: 'new_follower' | 'follow_request' | 'follow_accepted' | 'follow_rejected' | 'new_like' | 'new_comment' | 'new_case' | 'new_story' | 'new_story_reply' | 'admin_broadcast';
   senderEmail?: string;
   senderName?: string;
   senderPhotoUrl?: string;

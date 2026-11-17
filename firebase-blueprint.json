@@ -1346,6 +1346,112 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "EphemeralCommunityStory": {
+      "title": "EphemeralCommunityStory",
+      "description": "A 24-hour ephemeral clinical pearl, photo, video, case link, or visual media story shared in the Surgical Community.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "authorName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "authorDegree": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "authorSpecialty": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "authorPhotoUrl": {
+          "type": "string",
+          "maxLength": 350000
+        },
+        "authorPosition": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "text",
+            "case_link",
+            "media_link"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "mediaUrl": {
+          "type": "string",
+          "maxLength": 350000
+        },
+        "backgroundColor": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "linkedCaseId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "linkedCaseReference": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "linkedMediaId": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "viewedByUserIds": {
+          "type": "array"
+        },
+        "viewsCount": {
+          "type": "number"
+        },
+        "deletedByAdmin": {
+          "type": "boolean"
+        },
+        "deletedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expiresAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "authorName",
+        "mediaType",
+        "viewedByUserIds",
+        "viewsCount",
+        "createdAt",
+        "expiresAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -1420,6 +1526,10 @@
     "/communityStories/{storyId}": {
       "schema": "CommunityStory",
       "description": "Shared Surgical Community stories and clinical pearls."
+    },
+    "/ephemeralStories/{storyId}": {
+      "schema": "EphemeralCommunityStory",
+      "description": "24-hour auto-expiring Surgical Community stories and clinical pearls."
     }
   }
 }

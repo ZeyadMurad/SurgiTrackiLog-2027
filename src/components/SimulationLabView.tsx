@@ -36,10 +36,8 @@ import type {
   SimulationSessionType,
   SupportedLanguage,
 } from '../types/newTypes';
-import {
-  SIMULATION_PLATFORMS,
-  INTERNAL_SIMULATION_CASES,
-} from '../lib/simulationPlatforms';
+import { SIMULATION_PLATFORMS } from '../lib/simulationPlatforms';
+import { INTERNAL_SIMULATION_CASES_V2 } from '../lib/simulationCasesData';
 
 const I18N = {
   en: {
@@ -101,6 +99,7 @@ const I18N = {
       beginner: 'Beginner',
       intermediate: 'Intermediate',
       advanced: 'Advanced',
+      urgent: 'Urgent',
     },
     sessionTypes: {
       vr_simulation: 'VR Simulation',
@@ -172,6 +171,7 @@ const I18N = {
       beginner: 'مبتدئ',
       intermediate: 'متوسط',
       advanced: 'متقدم',
+      urgent: 'عاجل',
     },
     sessionTypes: {
       vr_simulation: 'محاكاة VR',
@@ -243,6 +243,7 @@ const I18N = {
       beginner: 'Anfänger',
       intermediate: 'Fortgeschritten',
       advanced: 'Experte',
+      urgent: 'Dringend',
     },
     sessionTypes: {
       vr_simulation: 'VR-Simulation',
@@ -263,6 +264,7 @@ const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: stri
   beginner: { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' },
   intermediate: { bg: '#fef3c7', text: '#b45309', border: '#fde68a' },
   advanced: { bg: '#fee2e2', text: '#b91c1c', border: '#fecaca' },
+  urgent: { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' },
 };
 
 // ============================================================================
@@ -351,7 +353,7 @@ export const SimulationLabView: React.FC<SimulationLabViewProps> = ({
             {tab === 'platforms' && <Globe size={16} />}
             {tab === 'internal' && <Brain size={16} />}
             {tab === 'sessions' && <Activity size={16} />}
-            {t.tabs[tab]}
+            {t.tabs[tab]}{tab === 'internal' ? ` (${INTERNAL_SIMULATION_CASES_V2.length})` : ''}
           </button>
         ))}
       </div>
@@ -634,6 +636,36 @@ const InternalSimulationsTab: React.FC<{
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [showResults, setShowResults] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('all');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
+  const [selectedUrgency, setSelectedUrgency] = useState<string>('all');
+
+  const specialtyOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of INTERNAL_SIMULATION_CASES_V2) {
+      counts.set(c.category, (counts.get(c.category) || 0) + 1);
+    }
+    return Array.from(counts.entries());
+  }, []);
+
+  const filteredCases = useMemo(() => {
+    return INTERNAL_SIMULATION_CASES_V2.filter(c => {
+      if (selectedSpecialty !== 'all' && c.category !== selectedSpecialty) return false;
+      if (selectedDifficulty !== 'all' && c.difficulty !== selectedDifficulty) return false;
+      if (selectedUrgency !== 'all' && (c.urgency || 'elective') !== selectedUrgency) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          c.title.toLowerCase().includes(q) ||
+          c.category.toLowerCase().includes(q) ||
+          c.scenario.toLowerCase().includes(q) ||
+          c.skillsTested.some(s => s.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [searchQuery, selectedSpecialty, selectedDifficulty, selectedUrgency]);
 
   const startCase = (caseData: SimulationCase) => {
     setActiveCase(caseData);
@@ -943,22 +975,81 @@ const InternalSimulationsTab: React.FC<{
           padding: '1rem 1.25rem',
           background: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 100%)',
           borderRadius: '0.5rem',
-          marginBottom: '1.5rem',
+          marginBottom: '1rem',
           border: '1px solid #a5f3fc',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
         }}
       >
         <p style={{ fontSize: '0.9rem', color: '#0e7490', margin: 0 }}>
           <Brain size={14} style={{ verticalAlign: 'middle', marginInlineEnd: '0.25rem' }} />
           {language === 'ar'
-            ? 'محاكاة تفاعلية قائمة على الحالات السريرية. اختبر معرفتك وحلّل أداءك.'
+            ? 'محاكاة تفاعلية قائمة على الحالات السريرية عبر 19 تخصصاً جراحياً.'
             : language === 'de'
-            ? 'Interaktive fallbasierte Simulationen. Testen Sie Ihr Wissen und analysieren Sie Ihre Leistung.'
-            : 'Interactive case-based simulations. Test your knowledge and analyze your performance.'}
+            ? 'Interaktive fallbasierte Simulationen über 19 chirurgische Fachgebiete.'
+            : 'Interactive case-based simulations across 19 surgical specialties.'}
         </p>
+        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0e7490', background: 'white', padding: '0.25rem 0.75rem', borderRadius: '9999px', border: '1px solid #a5f3fc' }}>
+          {filteredCases.length} / {INTERNAL_SIMULATION_CASES_V2.length} {language === 'ar' ? 'حالة' : 'cases'} · {filteredCases.reduce((acc, c) => acc + c.questions.length, 0)} {language === 'ar' ? 'سؤال' : 'MCQs'}
+        </span>
+      </div>
+
+      {/* Filters bar */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '0.625rem',
+          marginBottom: '1.25rem',
+        }}
+      >
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder={language === 'ar' ? 'ابحث في الحالات أو المهارات…' : language === 'de' ? 'Fälle oder Skills suchen…' : 'Search cases, procedures, skills…'}
+          style={{ padding: '0.55rem 0.85rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.875rem', background: 'white' }}
+        />
+        <select
+          value={selectedSpecialty}
+          onChange={e => setSelectedSpecialty(e.target.value)}
+          style={{ padding: '0.55rem 0.85rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.875rem', background: 'white', cursor: 'pointer' }}
+        >
+          <option value="all">{language === 'ar' ? 'كل التخصصات (19)' : language === 'de' ? 'Alle Fachgebiete (19)' : 'All Specialties (19)'}</option>
+          {specialtyOptions.map(([spec, cnt]) => (
+            <option key={spec} value={spec}>
+              {spec} ({cnt})
+            </option>
+          ))}
+        </select>
+        <select
+          value={selectedDifficulty}
+          onChange={e => setSelectedDifficulty(e.target.value)}
+          style={{ padding: '0.55rem 0.85rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.875rem', background: 'white', cursor: 'pointer' }}
+        >
+          <option value="all">{language === 'ar' ? 'كل المستويات' : language === 'de' ? 'Alle Schwierigkeitsgrade' : 'All Difficulties'}</option>
+          <option value="beginner">{I18N[language].difficulties.beginner}</option>
+          <option value="intermediate">{I18N[language].difficulties.intermediate}</option>
+          <option value="advanced">{I18N[language].difficulties.advanced}</option>
+          <option value="urgent">{I18N[language].difficulties.urgent}</option>
+        </select>
+        <select
+          value={selectedUrgency}
+          onChange={e => setSelectedUrgency(e.target.value)}
+          style={{ padding: '0.55rem 0.85rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.875rem', background: 'white', cursor: 'pointer' }}
+        >
+          <option value="all">{language === 'ar' ? 'كل درجات الإلحاح' : language === 'de' ? 'Alle Dringlichkeiten' : 'All Urgency Levels'}</option>
+          <option value="elective">{language === 'ar' ? 'انتقائي (Elective)' : 'Elective'}</option>
+          <option value="urgent">{language === 'ar' ? 'عاجل (Urgent)' : 'Urgent'}</option>
+          <option value="emergency">{language === 'ar' ? 'طارئ (Emergency)' : 'Emergency'}</option>
+        </select>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-        {INTERNAL_SIMULATION_CASES.map(caseData => (
+        {filteredCases.map(caseData => (
           <div
             key={caseData.id}
             style={{
@@ -983,6 +1074,21 @@ const InternalSimulationsTab: React.FC<{
               >
                 {I18N[language].difficulties[caseData.difficulty]}
               </span>
+              {caseData.urgency && (
+                <span
+                  style={{
+                    padding: '0.15rem 0.5rem',
+                    background: caseData.urgency === 'emergency' ? '#fee2e2' : caseData.urgency === 'urgent' ? '#ffedd5' : '#e0f2fe',
+                    color: caseData.urgency === 'emergency' ? '#991b1b' : caseData.urgency === 'urgent' ? '#9a3412' : '#0369a1',
+                    borderRadius: '0.25rem',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {caseData.urgency}
+                </span>
+              )}
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{caseData.category}</span>
             </div>
 

@@ -18,6 +18,7 @@ import {
   arrayUnion,
   arrayRemove,
   increment,
+  Timestamp,
 } from 'firebase/firestore';
 import {
   auth,
@@ -53,6 +54,7 @@ import {
   ThreadStatus,
   SimulationSession,
   CommunityStory,
+  EphemeralCommunityStory,
 } from '../types';
 import { DEFAULT_SURGICAL_SKILLS } from '../lib/medicalDefaults';
 import { matchDoctorCase, normalizeSurgeonName } from '../lib/doctorUtils';
@@ -122,6 +124,16 @@ interface DataContextType {
   markStoryViewed: (storyId: string) => Promise<void>;
   deleteCommunityStory: (storyId: string) => Promise<void>;
   deleteStory: (storyId: string) => Promise<void>;
+
+  // 24h Ephemeral Community Stories (V2)
+  ephemeralStories: EphemeralCommunityStory[];
+  createEphemeralStory: (
+    story: Omit<EphemeralCommunityStory, 'id' | 'createdAt' | 'expiresAt' | 'viewedByUserIds' | 'viewsCount' | 'updatedAt'>
+  ) => Promise<string>;
+  deleteEphemeralStory: (storyId: string) => Promise<void>;
+  viewEphemeralStory: (storyId: string) => Promise<void>;
+  replyToEphemeralStory: (storyId: string, message: string) => Promise<void>;
+
   viewedCommunityCaseIds: string[];
   firestoreQuotaExceeded: boolean;
   dismissQuotaWarning: () => void;
@@ -221,7 +233,7 @@ const OFFLINE_QUEUE_KEY = 'surgitrack_offline_queue_';
 
 interface OfflineQueueItem {
   id: string;
-  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill' | 'thread' | 'simulation_session' | 'recommendation' | 'article';
+  type: 'case' | 'community_case' | 'supervisor' | 'record' | 'session' | 'skill' | 'thread' | 'simulation_session' | 'recommendation' | 'article' | 'story';
   action: 'create' | 'update' | 'delete';
   data?: any;
   parentId?: string;
@@ -271,6 +283,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const raw = localStorage.getItem('surgitrack_local_stories');
       return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [ephemeralStories, setEphemeralStories] = useState<EphemeralCommunityStory[]>(() => {
+    try {
+      const raw = localStorage.getItem('surgitrack_local_ephemeral_stories');
+      if (!raw) return [];
+      const nowMs = Date.now();
+      return (JSON.parse(raw) as EphemeralCommunityStory[]).filter(
+        s => s && !s.deletedByAdmin && new Date(s.expiresAt).getTime() > nowMs
+      );
     } catch {
       return [];
     }
@@ -407,6 +431,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await deleteDoc(doc(db, 'users', syncUid, 'savedArticles', item.id));
           } else {
             await setDoc(doc(db, 'users', syncUid, 'savedArticles', item.id), cleanPayload(item.data), { merge: true });
+          }
+        } else if (item.type === 'story') {
+          if (item.action === 'delete') {
+            await deleteDoc(doc(db, 'ephemeralStories', item.id));
+          } else {
+            await setDoc(doc(db, 'ephemeralStories', item.id), cleanPayload(item.data), { merge: true });
           }
         }
       } catch (err: any) {
@@ -1350,6 +1380,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (unsubStories) unsubStories();
     };
   }, [user?.uid, storiesPageSize]);
+
+  // Real-time 24h Ephemeral Stories Listener & Auto-Expiry Cleanup (V2)
+  useEffect(() => {
+    const authUid = auth.currentUser?.uid || user?.uid;
+    if (!authUid) {
+      setEphemeralStories([]);
+      return;
+    }
+    let unsubEphemeral: (() => void) | undefined;
+    let isMounted = true;
+    try {
+      const qStories = query(
+        collection(db, 'ephemeralStories'),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      unsubEphemeral = onSnapshot(
+        qStories,
+        (snap) => {
+          if (!isMounted) return;
+          const nowMs = Date.now();
+          const active = snap.docs
+            .map(d => ({ ...d.data(), id: d.id }) as EphemeralCommunityStory)
+            .filter(s => s && !s.deletedByAdmin && new Date(s.expiresAt).getTime() > nowMs);
+          setEphemeralStories(active);
+          safeSetLocalStorage(
+            'surgitrack_local_ephemeral_stories',
+            active.slice(0, 30).map(s => stripLargeInlineData(s, 8_000))
+          );
+        },
+        (err) => {
+          if (isFirestoreQuotaError(err)) setFirestoreQuotaExceeded(true);
+          else console.warn('Ephemeral stories listener:', err.message);
+        }
+      );
+    } catch (e) {
+      console.warn('Ephemeral stories init error:', e);
+    }
+    const expiryTimer = setInterval(() => {
+      const nowMs = Date.now();
+      setEphemeralStories(prev => prev.filter(s => !s.deletedByAdmin && new Date(s.expiresAt).getTime() > nowMs));
+    }, 5 * 60 * 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(expiryTimer);
+      if (unsubEphemeral) unsubEphemeral();
+    };
+  }, [user?.uid]);
 
   // User simulation sessions real-time listener
   useEffect(() => {
@@ -3913,6 +3991,163 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const deleteStory = deleteCommunityStory;
 
+  // === V2 24h Ephemeral Stories CRUD ===
+  const createEphemeralStory = async (
+    storyInput: Omit<EphemeralCommunityStory, 'id' | 'createdAt' | 'expiresAt' | 'viewedByUserIds' | 'viewsCount' | 'updatedAt'>
+  ): Promise<string> => {
+    const uid = auth.currentUser?.uid || user?.uid || currentUid;
+    if (!uid || uid === 'local-surgeon-001') {
+      throw new Error('Authentication required to share a 24h story.');
+    }
+    const storyId = `eph_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const nowDate = new Date();
+    const expiresDate = new Date(nowDate.getTime() + 24 * 60 * 60 * 1000);
+    const nowIso = nowDate.toISOString();
+    const expiresIso = expiresDate.toISOString();
+
+    const localStory: EphemeralCommunityStory = cleanPayload({
+      id: storyId,
+      authorId: uid,
+      authorName: (storyInput.authorName || profile?.fullName || user?.displayName || 'Colleague Surgeon').trim().slice(0, 150),
+      ...(storyInput.authorDegree ? { authorDegree: storyInput.authorDegree.slice(0, 120) } : {}),
+      ...(storyInput.authorSpecialty ? { authorSpecialty: storyInput.authorSpecialty.slice(0, 150) } : {}),
+      ...(storyInput.authorPhotoUrl ? { authorPhotoUrl: storyInput.authorPhotoUrl.slice(0, 350000) } : {}),
+      ...(storyInput.authorPosition ? { authorPosition: storyInput.authorPosition.slice(0, 150) } : {}),
+      mediaType: storyInput.mediaType,
+      ...(storyInput.text ? { text: storyInput.text.slice(0, 2000) } : {}),
+      ...(storyInput.mediaUrl ? { mediaUrl: storyInput.mediaUrl.slice(0, 350000) } : {}),
+      ...(storyInput.backgroundColor ? { backgroundColor: storyInput.backgroundColor.slice(0, 32) } : {}),
+      ...(storyInput.linkedCaseId ? { linkedCaseId: storyInput.linkedCaseId.slice(0, 160) } : {}),
+      ...(storyInput.linkedCaseReference ? { linkedCaseReference: storyInput.linkedCaseReference.slice(0, 100) } : {}),
+      ...(storyInput.linkedMediaId ? { linkedMediaId: storyInput.linkedMediaId.slice(0, 160) } : {}),
+      viewedByUserIds: [uid],
+      viewsCount: 1,
+      deletedByAdmin: false,
+      createdAt: nowIso,
+      expiresAt: expiresIso,
+      updatedAt: nowIso,
+    });
+
+    setEphemeralStories(prev => {
+      const next = [localStory, ...prev.filter(s => s.id !== storyId)];
+      safeSetLocalStorage('surgitrack_local_ephemeral_stories', next.slice(0, 30).map(s => stripLargeInlineData(s, 8_000)));
+      return next;
+    });
+
+    const cloudStory = cleanPayload({
+      ...localStory,
+      createdAtServer: serverTimestamp(),
+      expiresAtServer: Timestamp.fromDate(expiresDate),
+    });
+
+    if (navigator.onLine) {
+      try {
+        await setDoc(doc(db, 'ephemeralStories', storyId), cloudStory);
+        const selfDoc = allDoctors.find(d => d.userId === uid || d.aliasIds?.includes(uid));
+        const baseFollowerIds = Array.from(
+          new Set([...(profile?.followers || []), ...(selfDoc?.followers || [])])
+        ).filter(fid => fid && !myUids.includes(fid) && fid !== uid);
+        for (const fid of baseFollowerIds.slice(0, 25)) {
+          const resolvedFollower = allDoctors.find(d => d.userId === fid || d.aliasIds?.includes(fid));
+          const recipientUid = resolvedFollower?.userId || fid;
+          await dispatchNotification(
+            {
+              title: 'New 24h Surgical Story',
+              message: `${localStory.authorName} shared a 24h surgical story`,
+              category: 'social',
+              type: 'new_story',
+              senderUserId: uid,
+              senderName: localStory.authorName,
+              senderPhotoUrl: localStory.authorPhotoUrl || '',
+              targetUserId: recipientUid,
+              targetStoryId: storyId,
+              navigationRef: 'community_stories',
+            },
+            `notif_eph_${storyId}_${recipientUid}`
+          );
+        }
+      } catch (e) {
+        console.warn('createEphemeralStory sync fallback queued:', e);
+        enqueueOfflineAction({ id: storyId, type: 'story', action: 'create', data: cloudStory, timestamp: nowIso });
+      }
+    } else {
+      enqueueOfflineAction({ id: storyId, type: 'story', action: 'create', data: cloudStory, timestamp: nowIso });
+    }
+
+    return storyId;
+  };
+
+  const deleteEphemeralStory = async (storyId: string) => {
+    const uid = auth.currentUser?.uid || currentUid;
+    const target = ephemeralStories.find(s => s.id === storyId);
+    if (!target) return;
+    const isAdmin =
+      profile?.role === 'super_admin' ||
+      user?.email?.toLowerCase().trim() === 'zeadmorud2030@gmail.com';
+    if (!isAdmin && target.authorId !== uid && !myUids.includes(target.authorId)) {
+      throw new Error('Permission denied: Only the author can delete this story.');
+    }
+    setEphemeralStories(prev => {
+      const next = prev.filter(s => s.id !== storyId);
+      safeSetLocalStorage('surgitrack_local_ephemeral_stories', next.slice(0, 30).map(s => stripLargeInlineData(s, 8_000)));
+      return next;
+    });
+    if (uid !== 'local-surgeon-001') {
+      if (navigator.onLine) {
+        await deleteDoc(doc(db, 'ephemeralStories', storyId));
+      } else {
+        enqueueOfflineAction({ id: storyId, type: 'story', action: 'delete', timestamp: new Date().toISOString() });
+      }
+    }
+  };
+
+  const viewEphemeralStory = async (storyId: string) => {
+    const uid = auth.currentUser?.uid || currentUid;
+    const target = ephemeralStories.find(s => s.id === storyId);
+    if (!target || !uid || (target.viewedByUserIds || []).includes(uid)) return;
+    const now = new Date().toISOString();
+    setEphemeralStories(prev =>
+      prev.map(s =>
+        s.id === storyId
+          ? {
+              ...s,
+              viewedByUserIds: [...(s.viewedByUserIds || []), uid],
+              viewsCount: (s.viewsCount || 0) + 1,
+            }
+          : s
+      )
+    );
+    if (uid !== 'local-surgeon-001' && navigator.onLine) {
+      updateDoc(doc(db, 'ephemeralStories', storyId), {
+        viewedByUserIds: arrayUnion(uid),
+        viewsCount: increment(1),
+        updatedAt: now,
+      }).catch(() => {});
+    }
+  };
+
+  const replyToEphemeralStory = async (storyId: string, message: string) => {
+    const uid = auth.currentUser?.uid || currentUid;
+    const cleanMsg = message.trim();
+    const target = ephemeralStories.find(s => s.id === storyId);
+    if (!uid || uid === 'local-surgeon-001' || !target || !cleanMsg) return;
+    const senderName = (profile?.fullName || user?.displayName || 'Colleague Surgeon').trim();
+    const authorDoc = allDoctors.find(d => d.userId === target.authorId || d.aliasIds?.includes(target.authorId));
+    const recipientUid = authorDoc?.userId || target.authorId;
+    await dispatchNotification({
+      title: 'Private Reply to Your Story',
+      message: `${senderName}: "${cleanMsg.slice(0, 600)}"`,
+      category: 'social',
+      type: 'new_story_reply',
+      senderUserId: uid,
+      senderName,
+      senderPhotoUrl: profile?.profilePhotoUrl || '',
+      targetUserId: recipientUid,
+      targetStoryId: storyId,
+      navigationRef: 'community_stories',
+    });
+  };
+
   // Full Restore (local + Firestore persistence)
   const restorePortfolioData = async (data: any) => {
     const targetUid = auth.currentUser?.uid || profile?.userId || currentUid;
@@ -4012,6 +4247,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         markStoryViewed,
         deleteCommunityStory,
         deleteStory,
+        ephemeralStories,
+        createEphemeralStory,
+        deleteEphemeralStory,
+        viewEphemeralStory,
+        replyToEphemeralStory,
         syncStatus,
         hasMoreCommunityCases,
         loadingMoreCommunity,

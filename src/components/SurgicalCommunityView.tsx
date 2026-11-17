@@ -17,6 +17,8 @@ import { translations } from '../lib/i18n';
 import { ClinicalCase } from '../types';
 import { SurgeonsCarousel } from './SurgeonsCarousel';
 import { CommunityStoriesSection } from './CommunityStoriesSection';
+import { CommunityStoriesView } from './CommunityStoriesView';
+import { CURATED_VISUAL_MEDIA_V2 } from '../lib/externalPlatformsV2';
 import { SurgicalCommunityPost } from './SurgicalCommunityPost';
 import { DoctorProfileModal } from './DoctorProfileModal';
 import { AddCaseModal } from './AddCaseModal';
@@ -59,6 +61,11 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
   const {
     communityCases,
     allDoctors,
+    ephemeralStories,
+    createEphemeralStory,
+    deleteEphemeralStory,
+    viewEphemeralStory,
+    replyToEphemeralStory,
     deleteCase,
     addCase,
     updateCase,
@@ -70,7 +77,7 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
     fetchCommunityCaseById,
     markCommunityCasesViewed,
   } = useData();
-  const { profile, language } = useAuth();
+  const { user, profile, language } = useAuth();
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
 
@@ -298,6 +305,34 @@ export const SurgicalCommunityView: React.FC<SurgicalCommunityViewProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 0. 24-Hour Ephemeral Community Stories Ring (V2) */}
+      <div className="bg-white rounded-3xl border border-slate-200 px-4 sm:px-5 py-3 shadow-xs">
+        <CommunityStoriesView
+          language={language}
+          currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
+          currentUserName={profile?.fullName || user?.displayName || 'Surgeon'}
+          currentUserSpecialty={profile?.specialty}
+          currentUserDegree={profile?.medicalQualification}
+          currentUserPhotoUrl={profile?.profilePhotoUrl}
+          currentUserPosition={profile?.currentPosition}
+          stories={ephemeralStories}
+          publishedCases={communityCases}
+          visualMedia={CURATED_VISUAL_MEDIA_V2.map(m => ({ id: m.id, title: m.title }))}
+          viewerNamesMap={Object.fromEntries([
+            ...allDoctors.map(d => [d.userId, d.fullName]),
+            ...(profile?.userId ? [[profile.userId, profile.fullName]] : []),
+          ])}
+          focusedStoryId={focusedStoryId}
+          onClearFocusedStory={onClearFocusedStory}
+          onCreateStory={async (story) => {
+            await createEphemeralStory(story);
+          }}
+          onDeleteStory={deleteEphemeralStory}
+          onViewStory={viewEphemeralStory}
+          onReplyToStory={replyToEphemeralStory}
+        />
       </div>
 
       {/* 1. Circular Surgeons Avatars Carousel */}

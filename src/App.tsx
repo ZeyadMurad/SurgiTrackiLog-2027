@@ -71,7 +71,8 @@ import { TraineePortfolioExportModal } from './components/TraineePortfolioExport
 import { YourPostsModal } from './components/YourPostsModal';
 import { GlobalAcademicFooter } from './components/GlobalAcademicFooter';
 import { CommunityThreadsView } from './components/CommunityThreadsView';
-import { VisualLibraryView } from './components/VisualLibraryView';
+import { VisualLibraryViewV2 } from './components/VisualLibraryViewV2';
+import { useAppRefresh, timeSinceLastRefresh } from './lib/useAppRefresh';
 import { SimulationLabView } from './components/SimulationLabView';
 import { CvBuilderView } from './components/CvBuilderView';
 import { translations } from './lib/i18n';
@@ -151,6 +152,7 @@ function SurgiTrackApp() {
     toggleSaveVisualMedia,
     simulationSessions,
     logSimulationSession,
+    syncNow,
   } = useData();
 
   // DEFAULT VIEW: Surgical Literature & News (as requested by user)
@@ -195,6 +197,17 @@ function SurgiTrackApp() {
     const choice = await installPromptEvt.userChoice;
     if (choice?.outcome === 'accepted') setInstallPromptEvt(null);
   };
+
+  const { refreshState, refreshNow } = useAppRefresh({
+    onRefresh: async () => {
+      await syncNow().catch(() => {});
+    },
+    refreshOnMount: false,
+    refreshOnFocus: true,
+    refreshOnReconnect: true,
+    refreshOnVisibility: true,
+    minAutoInterval: 60_000,
+  });
 
   const t = translations[language] || translations.en;
   const isRTL = language === 'ar';
@@ -493,6 +506,22 @@ function SurgiTrackApp() {
 
           {/* Center/Right Actions: Sync status, Language, AI Assistant, User Avatar, Logout & Delete icons */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Manual Auto-Refresh Trigger */}
+            <button
+              type="button"
+              onClick={() => refreshNow(['news', 'research', 'community'])}
+              disabled={refreshState.isRefreshing}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-xl border border-white/10 transition cursor-pointer shrink-0 disabled:opacity-60"
+              title={isRTL ? 'تحديث الدراسات والبيانات الآن' : 'Refresh literature & feed now'}
+            >
+              <RefreshCw size={13} className={refreshState.isRefreshing ? 'animate-spin text-teal-400' : 'text-teal-300'} />
+              <span className="hidden xl:inline text-[10px] text-slate-300">
+                {refreshState.isRefreshing
+                  ? (isRTL ? 'جاري التحديث...' : 'Updating...')
+                  : timeSinceLastRefresh(refreshState.lastRefreshAt, language)}
+              </span>
+            </button>
+
             {/* Sync Indicator */}
             <div
               className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border ${
@@ -1252,11 +1281,14 @@ function SurgiTrackApp() {
 
               {dashboardTab === 'learning' && <LearningCurveView />}
               {dashboardTab === 'visual_library' && (
-                <VisualLibraryView
+                <VisualLibraryViewV2
                   language={language}
                   currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
                   savedMediaIds={savedVisualMediaIds}
                   onSaveMedia={toggleSaveVisualMedia}
+                  onRefresh={async () => {
+                    await refreshNow(['news', 'research', 'community']);
+                  }}
                   onOpenThreadForMedia={() => {
                     setCommunityTab('threads');
                     setActiveView('community');
@@ -1834,7 +1866,7 @@ function SurgiTrackApp() {
                       )}
 
                       {/* Social Click Action: Go to Specific Case, Story, or Community */}
-                      {(isLike || isComment || isNewCase || isNewFollower || notif.type === 'new_story') && (
+                      {(isLike || isComment || isNewCase || isNewFollower || notif.type === 'new_story' || notif.type === 'new_story_reply') && (
                         <div className="pt-1 flex justify-end">
                           <button
                             type="button"

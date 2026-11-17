@@ -119,6 +119,14 @@ export type MediaSource =
   | 'medtube'
   | 'jsurg'
   | 'gms'
+  | 'opmed'
+  | 'sages'
+  | 'eaes'
+  | 'jomi'
+  | 'vestrasurg'
+  | 'csl'
+  | 'surgicaltheatre'
+  | 'gastroatlas'
   | 'user';
 
 export interface VisualMedia {
@@ -154,6 +162,8 @@ export interface ExternalMediaSourceConfig {
   displayName: string;
   baseUrl: string;
   searchUrlTemplate: string;
+  searchUrl?: string;
+  logoUrl?: string;
   description?: string;
   categories: MediaCategory[];
   supportsEmbed: boolean;
@@ -208,7 +218,8 @@ export interface SimulationCase {
   id: string;
   title: string;
   category: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  difficulty: 'beginner' | 'intermediate' | 'advanced' | 'urgent';
+  urgency?: 'elective' | 'urgent' | 'emergency';
   estimatedMinutes: number;
   scenario: string;
   skillsTested: string[];
@@ -385,3 +396,5 @@ export interface CvTemplateConfig {
   useColorAccent: boolean;
   sections: string[];
 }
+
+export * from './newTypesPart2';

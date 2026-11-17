@@ -153,11 +153,16 @@ export const SurgicalNewsView: React.FC = () => {
         triggerRotationFetch();
       }
     };
+    const onGlobalRefresh = () => {
+      triggerRotationFetch();
+    };
     document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('surgitrack:refresh', onGlobalRefresh);
 
     return () => {
       clearInterval(tick);
       document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('surgitrack:refresh', onGlobalRefresh);
     };
   }, [autoUpdateEnabled, triggerRotationFetch]);
 

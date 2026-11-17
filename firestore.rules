@@ -269,6 +269,39 @@ service cloud.firestore {
         && data.updatedAt is string && data.updatedAt.size() <= 64;
     }
 
+    function isValidEphemeralStoryPayload(data) {
+      return data.keys().hasAll([
+          'id', 'authorId', 'authorName', 'mediaType', 'viewedByUserIds', 'viewsCount', 'createdAt', 'expiresAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'authorId', 'authorName', 'authorDegree', 'authorSpecialty', 'authorPhotoUrl', 'authorPosition',
+          'mediaType', 'text', 'mediaUrl', 'backgroundColor', 'linkedCaseId', 'linkedCaseReference', 'linkedMediaId',
+          'viewedByUserIds', 'viewsCount', 'deletedByAdmin', 'deletedAt',
+          'expiresAt', 'expiresAtServer', 'createdAt', 'createdAtServer', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 150
+        && (!('authorDegree' in data) || (data.authorDegree is string && data.authorDegree.size() <= 120))
+        && (!('authorSpecialty' in data) || (data.authorSpecialty is string && data.authorSpecialty.size() <= 150))
+        && (!('authorPhotoUrl' in data) || (data.authorPhotoUrl is string && data.authorPhotoUrl.size() <= 350000))
+        && (!('authorPosition' in data) || (data.authorPosition is string && data.authorPosition.size() <= 150))
+        && data.mediaType in ['image', 'video', 'text', 'case_link', 'media_link']
+        && (!('text' in data) || (data.text is string && data.text.size() <= 2000))
+        && (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 350000))
+        && (!('backgroundColor' in data) || (data.backgroundColor is string && data.backgroundColor.size() <= 32))
+        && (!('linkedCaseId' in data) || (data.linkedCaseId is string && data.linkedCaseId.size() <= 160))
+        && (!('linkedCaseReference' in data) || (data.linkedCaseReference is string && data.linkedCaseReference.size() <= 100))
+        && (!('linkedMediaId' in data) || (data.linkedMediaId is string && data.linkedMediaId.size() <= 160))
+        && data.viewedByUserIds is list && data.viewedByUserIds.size() <= 5000 && (data.viewedByUserIds.size() == 0 || data.viewedByUserIds[0] is string)
+        && data.viewsCount is number && data.viewsCount >= 0
+        && (!('deletedByAdmin' in data) || data.deletedByAdmin is bool)
+        && (!('deletedAt' in data) || (data.deletedAt is string && data.deletedAt.size() <= 64))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.expiresAt is string && data.expiresAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
     function isValidSimulationSessionPayload(data) {
       return data.keys().hasAll([
           'id', 'userId', 'sessionDate', 'sessionType', 'scenarioName', 'durationMinutes', 'verified', 'createdAt', 'updatedAt'
@@ -464,6 +497,36 @@ service cloud.firestore {
         && (
           incoming().diff(existing()).affectedKeys().hasOnly([
             'likedByUserIds', 'likesCount', 'viewedByUserIds', 'viewsCount', 'updatedAt'
+          ])
+          || existing().authorId == request.auth.uid
+          || isSuperAdmin()
+        );
+
+      allow delete: if isValidId(storyId)
+        && isSignedIn()
+        && (existing().authorId == request.auth.uid || isSuperAdmin());
+    }
+
+    // 24-Hour Ephemeral Surgical Community Stories (V2)
+    match /ephemeralStories/{storyId} {
+      allow get: if isValidId(storyId) && isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isValidId(storyId)
+        && isSignedIn()
+        && isValidEphemeralStoryPayload(incoming())
+        && incoming().id == storyId
+        && (incoming().authorId == request.auth.uid || isSuperAdmin())
+        && (!('deletedByAdmin' in incoming()) || incoming().deletedByAdmin == false || isSuperAdmin());
+
+      allow update: if isValidId(storyId)
+        && isSignedIn()
+        && isValidEphemeralStoryPayload(incoming())
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'viewedByUserIds', 'viewsCount', 'updatedAt'
           ])
           || existing().authorId == request.auth.uid
           || isSuperAdmin()
