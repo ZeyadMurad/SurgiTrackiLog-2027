@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Mail,
   Lock,
   User,
   Camera,
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ShieldCheck,
@@ -15,15 +16,18 @@ import { useAuth } from '../context/AuthContext';
 import { translations } from '../lib/i18n';
 import { SURGICAL_SPECIALTIES, TRAINEE_POSITIONS } from '../lib/medicalDefaults';
 import { compressImageFileToDataUrl } from '../lib/imageUtils';
+import { BiometricAuth } from './BiometricAuth';
 
 interface AuthViewProps {
   initialMode?: 'login' | 'register' | 'forgot';
   initialEmail?: string;
+  onBackToLanding?: () => void;
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({
   initialMode = 'login',
   initialEmail = '',
+  onBackToLanding,
 }) => {
   const {
     loginWithEmail,
@@ -38,6 +42,21 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const isRTL = language === 'ar';
 
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  const savedBiometricEmail = (() => {
+    try {
+      const last = localStorage.getItem('surgitrack_biometric_last_email');
+      if (last && localStorage.getItem(`surgitrack_biometric_${last}`)) {
+        return last;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return '';
+  })();
 
   // Registration & Login Fields
   const [email, setEmail] = useState(initialEmail);
@@ -204,6 +223,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
         {/* Top Header with LTR Logo & Language Toggle */}
         <div className="max-w-6xl w-full mx-auto flex items-center justify-between py-2">
           <div className="flex items-center gap-3">
+            {onBackToLanding && (
+              <button
+                type="button"
+                onClick={onBackToLanding}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-slate-200 transition cursor-pointer"
+                title={isRTL ? 'العودة للصفحة الرئيسية' : 'Back to Home'}
+              >
+                {isRTL ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
+                <span className="hidden sm:inline">{isRTL ? 'الرئيسية' : language === 'de' ? 'Start' : 'Home'}</span>
+              </button>
+            )}
             <div className="w-11 h-11 rounded-2xl overflow-hidden shadow-lg border border-teal-500/40 bg-[#101C32] shrink-0">
               <img
                 src="/icon-512.png"
@@ -483,6 +513,27 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     </svg>
                     <span>{isRTL ? 'الدخول بحساب Google' : 'Sign in with Google'}</span>
                   </button>
+
+                  {savedBiometricEmail && (
+                    <div className="mt-4 pt-3 border-t border-slate-200">
+                      <BiometricAuth
+                        language={language}
+                        userEmail={email.trim() || savedBiometricEmail}
+                        onBiometricSuccess={() => {
+                          if (!email.trim()) {
+                            setEmail(savedBiometricEmail);
+                          }
+                          setSuccessMessage(
+                            isRTL
+                              ? 'تم التحقق بالبصمة بنجاح! أدخل كلمة المرور أو اضغط الدخول عبر Google للمتابعة.'
+                              : language === 'de'
+                              ? 'Biometrie bestätigt! Bitte Passwort eingeben oder Google-Anmeldung wählen.'
+                              : 'Biometric device verified! Enter your password or click Sign in with Google to unlock your cloud vault.',
+                          );
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

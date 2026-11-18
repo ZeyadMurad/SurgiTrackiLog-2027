@@ -43,13 +43,17 @@ import {
   Images,
   FlaskConical,
   FileText,
+  Compass,
+  Quote,
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
 import { SurgiTrackLogo } from './components/SurgiTrackLogo';
 import { matchDoctorCase } from './lib/doctorUtils';
 import { AuthView } from './components/AuthView';
+import { LandingPage } from './components/LandingPage';
 import { AiAssistantModal } from './components/AiAssistantModal';
+import { AIMentor } from './components/AIMentor';
 import { TrainingCharts } from './components/TrainingCharts';
 import { ClinicalCasesView } from './components/ClinicalCasesView';
 import { SupervisorView } from './components/SupervisorView';
@@ -59,6 +63,7 @@ import { RecommendationGenerator } from './components/RecommendationGenerator';
 import { GermanPortfolioView } from './components/GermanPortfolioView';
 import { SurgicalNewsView } from './components/SurgicalNewsView';
 import { PubMedSearchEngineView } from './components/PubMedSearchEngineView';
+import { PubMedIntegration } from './components/PubMedIntegration';
 import { MedicalJournalsView } from './components/MedicalJournalsView';
 import { AccreditationView } from './components/AccreditationView';
 import { LearningCurveView } from './components/LearningCurveView';
@@ -71,8 +76,10 @@ import { TraineePortfolioExportModal } from './components/TraineePortfolioExport
 import { YourPostsModal } from './components/YourPostsModal';
 import { GlobalAcademicFooter } from './components/GlobalAcademicFooter';
 import { CommunityThreadsView } from './components/CommunityThreadsView';
-import { VisualLibraryViewV2 } from './components/VisualLibraryViewV2';
+import { VisualLibraryViewV3 } from './components/VisualLibraryViewV3';
+import { SurgicalAtlas } from './components/SurgicalAtlas';
 import { useAppRefresh, timeSinceLastRefresh } from './lib/useAppRefresh';
+import { usePWA } from './lib/usePWA';
 import { SimulationLabView } from './components/SimulationLabView';
 import { CvBuilderView } from './components/CvBuilderView';
 import { translations } from './lib/i18n';
@@ -100,6 +107,8 @@ type ActiveView =
   | 'community_threads'
   | 'visual_library'
   | 'simulation_lab'
+  | 'surgical_atlas'
+  | 'pubmed_citations'
   | 'cv_builder'
   | 'admin';
 
@@ -157,9 +166,12 @@ function SurgiTrackApp() {
 
   // DEFAULT VIEW: Surgical Literature & News (as requested by user)
   const [activeView, setActiveView] = useState<ActiveView>('news');
-  const [literatureTab, setLiteratureTab] = useState<'stream' | 'journals' | 'pubmed'>('stream');
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'learning' | 'visual_library' | 'simulation_lab'>('overview');
+  const [literatureTab, setLiteratureTab] = useState<'stream' | 'journals' | 'pubmed' | 'pubmed_citations'>('stream');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'learning' | 'visual_library' | 'simulation_lab' | 'surgical_atlas'>('overview');
   const [communityTab, setCommunityTab] = useState<'cases' | 'threads'>('cases');
+  const [visualLibraryQuery, setVisualLibraryQuery] = useState('');
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [showQuickCaseModal, setShowQuickCaseModal] = useState(false);
@@ -178,25 +190,48 @@ function SurgiTrackApp() {
   const [replySending, setReplySending] = useState(false);
   const [replySuccessMessage, setReplySuccessMessage] = useState('');
   const [replyError, setReplyError] = useState('');
-  const [installPromptEvt, setInstallPromptEvt] = useState<any>(null);
+  const { isInstallable, isOnline, updateAvailable, install, applyUpdate } = usePWA();
 
-  // PWA install prompt — capture the browser's deferred install event so the
-  // top-bar "Install App" button can trigger it on demand.
   useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPromptEvt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+    if (user || profile) {
+      setShowAuth(false);
+    }
+  }, [user, profile]);
 
-  const handleInstallApp = async () => {
-    if (!installPromptEvt) return;
-    installPromptEvt.prompt();
-    const choice = await installPromptEvt.userChoice;
-    if (choice?.outcome === 'accepted') setInstallPromptEvt(null);
-  };
+  const portfolioStats = React.useMemo(() => {
+    const procCounts = new Map<string, number>();
+    const specCounts = new Map<string, number>();
+    trainingRecords.forEach((rec) => {
+      const pName = (rec.procedureName || '').trim();
+      if (pName) procCounts.set(pName, (procCounts.get(pName) || 0) + 1);
+      const sp = (rec.specialty || 'General Surgery').trim();
+      specCounts.set(sp, (specCounts.get(sp) || 0) + 1);
+    });
+    cases.forEach((c) => {
+      const sp = (c.specialty || 'General Surgery').trim();
+      specCounts.set(sp, (specCounts.get(sp) || 0) + 1);
+    });
+    return {
+      totalCases: stats.totalCases,
+      totalProcedures: stats.totalProcedures,
+      verifiedProcedures: stats.verifiedProcedures,
+      totalHours: stats.totalHours,
+      verifiedHours: stats.verifiedHours,
+      topProcedures: Array.from(procCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([name, count]) => ({ name, count })),
+      proceduresBySpecialty: Array.from(specCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([specialty, count]) => ({ specialty, count })),
+      skillsMatrix: skills.slice(0, 12).map((s) => ({
+        skillName: s.name,
+        competencyStatus: s.competencyStatus,
+        totalHours: s.totalDocumentedHours,
+      })),
+    };
+  }, [stats, trainingRecords, cases, skills]);
 
   const { refreshState, refreshNow } = useAppRefresh({
     onRefresh: async () => {
@@ -273,9 +308,30 @@ function SurgiTrackApp() {
     );
   }
 
-  // If user is not authenticated: render dedicated AuthView
+  // If user is not authenticated: render LandingPage first, switching to AuthView on demand
   if (!user && !profile) {
-    return <AuthView />;
+    if (!showAuth) {
+      return (
+        <LandingPage
+          language={language}
+          onChangeLanguage={setLanguage}
+          onSignIn={() => {
+            setAuthMode('login');
+            setShowAuth(true);
+          }}
+          onSignUp={() => {
+            setAuthMode('register');
+            setShowAuth(true);
+          }}
+        />
+      );
+    }
+    return (
+      <AuthView
+        initialMode={authMode}
+        onBackToLanding={() => setShowAuth(false)}
+      />
+    );
   }
 
   // Direct immediate access once authenticated (no email verification lock)
@@ -351,7 +407,7 @@ function SurgiTrackApp() {
   // Unified Hub Navigation Helper: keeps Learning Curve, Visual Library, Simulation Lab inside Dashboard;
   // Medical Journals & PubMed inside Literature; and Threads inside Community.
   const navigateTo = (target: ActiveView) => {
-    if (target === 'learning' || target === 'visual_library' || target === 'simulation_lab') {
+    if (target === 'learning' || target === 'visual_library' || target === 'simulation_lab' || target === 'surgical_atlas') {
       setDashboardTab(target);
       setActiveView('dashboard');
     } else if (target === 'journals') {
@@ -359,6 +415,9 @@ function SurgiTrackApp() {
       setActiveView('news');
     } else if (target === 'pubmed') {
       setLiteratureTab('pubmed');
+      setActiveView('news');
+    } else if (target === 'pubmed_citations') {
+      setLiteratureTab('pubmed_citations');
       setActiveView('news');
     } else if (target === 'community_threads') {
       setCommunityTab('threads');
@@ -403,6 +462,13 @@ function SurgiTrackApp() {
           icon: BookOpen,
           isActive: activeView === 'news' && literatureTab === 'pubmed',
           onClick: () => { setLiteratureTab('pubmed'); setActiveView('news'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'pubmed_citations',
+          label: isRTL ? 'الاقتباسات والأبحاث (PubMed)' : language === 'de' ? 'PubMed Zitate & Studien' : 'PubMed Citations',
+          icon: Quote,
+          isActive: activeView === 'news' && literatureTab === 'pubmed_citations',
+          onClick: () => { setLiteratureTab('pubmed_citations'); setActiveView('news'); setMobileMenuOpen(false); },
         },
       ],
     },
@@ -461,6 +527,13 @@ function SurgiTrackApp() {
           icon: FlaskConical,
           isActive: activeView === 'dashboard' && dashboardTab === 'simulation_lab',
           onClick: () => { setDashboardTab('simulation_lab'); setActiveView('dashboard'); setMobileMenuOpen(false); },
+        },
+        {
+          id: 'surgical_atlas',
+          label: isRTL ? 'الأطلس التشريحي 3D' : language === 'de' ? '3D Anatomie-Atlas' : 'Surgical Atlas 3D',
+          icon: Compass,
+          isActive: activeView === 'dashboard' && dashboardTab === 'surgical_atlas',
+          onClick: () => { setDashboardTab('surgical_atlas'); setActiveView('dashboard'); setMobileMenuOpen(false); },
         },
       ],
     },
@@ -551,15 +624,32 @@ function SurgiTrackApp() {
             </div>
 
             {/* PWA Install App button — visible whenever the browser offers installation */}
-            {installPromptEvt && (
+            {isInstallable && (
               <button
-                onClick={handleInstallApp}
+                onClick={install}
                 className="flex items-center gap-1.5 bg-teal-500/20 hover:bg-teal-500/35 border border-teal-400/50 text-teal-200 hover:text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0"
                 title={isRTL ? 'تثبيت SurgiTrack كتطبيق على جهازك (يعمل دون إنترنت للبيانات المحفوظة)' : 'Install SurgiTrack as an app (offline-ready for cached data)'}
               >
                 <MonitorSmartphone size={14} />
                 <span className="hidden sm:inline">{isRTL ? 'تثبيت التطبيق' : 'Install App'}</span>
               </button>
+            )}
+
+            {updateAvailable && (
+              <button
+                onClick={applyUpdate}
+                className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 hover:text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0"
+              >
+                <RefreshCw size={13} />
+                <span className="hidden sm:inline">{isRTL ? 'تحديث متاح' : 'Update App'}</span>
+              </button>
+            )}
+
+            {!isOnline && (
+              <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-2.5 py-1 rounded-xl">
+                <WifiOff size={12} />
+                {isRTL ? 'وضع عدم الاتصال' : 'Offline'}
+              </span>
             )}
 
             {/* Trainee Portfolio Export Button */}
@@ -788,7 +878,7 @@ function SurgiTrackApp() {
           <div className="bg-white rounded-3xl border border-slate-200 p-3 shadow-xs space-y-1">
             {navItems.map(item => {
               const Icon = item.icon;
-              const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
+              const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed' || activeView === 'pubmed_citations')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab' || activeView === 'surgical_atlas')) || (item.id === 'community' && activeView === 'community_threads');
               const isAdminItem = item.id === 'admin';
               return (
                 <div key={item.id} className="space-y-1">
@@ -944,7 +1034,7 @@ function SurgiTrackApp() {
                 <div className="space-y-1">
                   {navItems.map(item => {
                     const Icon = item.icon;
-                    const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
+                    const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed' || activeView === 'pubmed_citations')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab' || activeView === 'surgical_atlas')) || (item.id === 'community' && activeView === 'community_threads');
                     return (
                       <div key={item.id} className="space-y-1">
                         <button
@@ -1097,7 +1187,7 @@ function SurgiTrackApp() {
           )}
 
           {/* HUB 1: Unified Surgical Literature & Medical Journals Hub (Auto-Updating Studies + Medical Journals + PubMed) */}
-          {(activeView === 'news' || activeView === 'journals' || activeView === 'pubmed') && (
+          {(activeView === 'news' || activeView === 'journals' || activeView === 'pubmed' || activeView === 'pubmed_citations') && (
             <div className="space-y-5 animate-fadeIn">
               {/* Literature Hub Segmented Switcher */}
               <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2">
@@ -1140,6 +1230,19 @@ function SurgiTrackApp() {
                     <BookOpen size={15} className={literatureTab === 'pubmed' ? 'text-teal-400' : 'text-slate-500'} />
                     <span>{isRTL ? 'بحث PubMed الشامل' : 'PubMed Archive'}</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setLiteratureTab('pubmed_citations'); setActiveView('news'); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      literatureTab === 'pubmed_citations'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Quote size={15} className={literatureTab === 'pubmed_citations' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'الاقتباسات (PubMed)' : language === 'de' ? 'PubMed Zitate' : 'Citations & Similar'}</span>
+                  </button>
                 </div>
 
                 <div className="hidden md:flex items-center gap-2 px-3 text-[11px] font-medium text-slate-500">
@@ -1156,6 +1259,7 @@ function SurgiTrackApp() {
               {literatureTab === 'stream' && <SurgicalNewsView />}
               {literatureTab === 'journals' && <MedicalJournalsView />}
               {literatureTab === 'pubmed' && <PubMedSearchEngineView />}
+              {literatureTab === 'pubmed_citations' && <PubMedIntegration language={language} />}
             </div>
           )}
 
@@ -1205,8 +1309,8 @@ function SurgiTrackApp() {
             />
           )}
 
-          {/* HUB 3: Unified Surgical Dashboard (Overview + Learning Curve + Visual Library + Simulation Lab) */}
-          {(activeView === 'dashboard' || activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab') && (
+          {/* HUB 3: Unified Surgical Dashboard (Overview + Learning Curve + Visual Library + Simulation Lab + Surgical Atlas 3D) */}
+          {(activeView === 'dashboard' || activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab' || activeView === 'surgical_atlas') && (
             <div className="space-y-5 animate-fadeIn">
               {/* Dashboard Hub Workspace Bar */}
               <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2">
@@ -1272,6 +1376,19 @@ function SurgiTrackApp() {
                       </span>
                     )}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setDashboardTab('surgical_atlas'); setActiveView('dashboard'); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      dashboardTab === 'surgical_atlas'
+                        ? 'bg-[#101C32] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Compass size={15} className={dashboardTab === 'surgical_atlas' ? 'text-teal-400' : 'text-slate-500'} />
+                    <span>{isRTL ? 'الأطلس التشريحي 3D' : language === 'de' ? '3D Anatomie-Atlas' : 'Surgical Atlas 3D'}</span>
+                  </button>
                 </div>
 
                 <div className="hidden xl:flex items-center gap-2 px-3 text-[11px] font-medium text-slate-500">
@@ -1281,14 +1398,12 @@ function SurgiTrackApp() {
 
               {dashboardTab === 'learning' && <LearningCurveView />}
               {dashboardTab === 'visual_library' && (
-                <VisualLibraryViewV2
+                <VisualLibraryViewV3
                   language={language}
                   currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
                   savedMediaIds={savedVisualMediaIds}
                   onSaveMedia={toggleSaveVisualMedia}
-                  onRefresh={async () => {
-                    await refreshNow(['news', 'research', 'community']);
-                  }}
+                  initialQuery={visualLibraryQuery}
                   onOpenThreadForMedia={() => {
                     setCommunityTab('threads');
                     setActiveView('community');
@@ -1302,6 +1417,16 @@ function SurgiTrackApp() {
                   traineeId={profile?.userId || user?.uid}
                   simulationSessions={simulationSessions}
                   onLogSession={logSimulationSession}
+                />
+              )}
+              {dashboardTab === 'surgical_atlas' && (
+                <SurgicalAtlas
+                  language={language}
+                  onStructureClick={(_structure, relatedProcedure) => {
+                    setVisualLibraryQuery(relatedProcedure);
+                    setDashboardTab('visual_library');
+                    setActiveView('dashboard');
+                  }}
                 />
               )}
 
@@ -1337,8 +1462,8 @@ function SurgiTrackApp() {
                 </div>
               </div>
 
-              {/* Integrated Learning & Simulation Modules inside Dashboard */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Integrated Learning, Simulation & 3D Atlas Modules inside Dashboard */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <button
                   type="button"
                   onClick={() => setDashboardTab('learning')}
@@ -1380,7 +1505,7 @@ function SurgiTrackApp() {
                       {isRTL ? 'المكتبة المرئية الجراحية' : language === 'de' ? 'Chirurgische Mediathek' : 'Surgical Visual Library'}
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {isRTL ? 'فيديوهات عمليات منتقاة وبحث متكامل في WeBSurg وCTSNet وMedTube.' : 'Curated operative videos & multi-platform search across WeBSurg and CTSNet.'}
+                      {isRTL ? 'فيديوهات عمليات حقيقية منتقاة ومختبرة عبر يوتيوب وWeBSurg وCTSNet.' : 'Curated, live-verified operative videos across YouTube, WeBSurg & CTSNet.'}
                     </p>
                   </div>
                 </button>
@@ -1404,6 +1529,29 @@ function SurgiTrackApp() {
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                       {isRTL ? 'حالات محاكاة تفاعلية مع أسئلة تقييم ودليل 10 منصات محاكاة عالمية.' : 'Interactive surgical case simulations, rationales & 10 global VR platforms.'}
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab('surgical_atlas')}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-teal-500 p-5 text-start transition group cursor-pointer flex flex-col justify-between gap-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 group-hover:bg-cyan-600 group-hover:text-white transition-colors">
+                      <Compass size={21} />
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
+                      3D · 6 {isRTL ? 'طبقات' : 'layers'}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 group-hover:text-cyan-800 transition-colors">
+                      {isRTL ? 'الأطلس التشريحي ثلاثي الأبعاد' : language === 'de' ? '3D Anatomie-Atlas' : '3D Surgical Anatomy Atlas'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {isRTL ? 'تشريح تفاعلي بالطبقات مع مناطق الخطر الجراحية وربط مباشر بالفيديوهات.' : 'Interactive 3D layered anatomy, danger zones & direct procedure video links.'}
                     </p>
                   </div>
                 </button>
@@ -1599,7 +1747,7 @@ function SurgiTrackApp() {
         <div className="pointer-events-auto bg-[#101C32]/95 backdrop-blur-md text-white border border-teal-500/40 rounded-2xl sm:rounded-full p-1.5 shadow-2xl flex items-center justify-between gap-1">
           {quickNavItems.map(item => {
             const Icon = item.icon;
-            const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab')) || (item.id === 'community' && activeView === 'community_threads');
+            const isActive = activeView === item.id || (item.id === 'news' && (activeView === 'journals' || activeView === 'pubmed' || activeView === 'pubmed_citations')) || (item.id === 'dashboard' && (activeView === 'learning' || activeView === 'visual_library' || activeView === 'simulation_lab' || activeView === 'surgical_atlas')) || (item.id === 'community' && activeView === 'community_threads');
             return (
               <button
                 key={item.id}
@@ -2014,6 +2162,9 @@ function SurgiTrackApp() {
           }}
         />
       )}
+
+      {/* Floating AI Surgical Mentor */}
+      <AIMentor language={language} portfolioStats={portfolioStats} />
     </div>
   );
 }

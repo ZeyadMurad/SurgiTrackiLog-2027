@@ -5,6 +5,7 @@ import { useData } from '../context/DataContext';
 import { SupportedLanguage } from '../types';
 import { SURGICAL_SPECIALTIES, TRAINEE_POSITIONS } from '../lib/medicalDefaults';
 import { compressImageFileToDataUrl } from '../lib/imageUtils';
+import { BiometricAuth } from './BiometricAuth';
 
 interface UserProfileViewProps {
   onNavigateToBackup: () => void;
@@ -472,6 +473,31 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ onNavigateToBa
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Biometric Security & Device Passkey Card */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+            <Shield size={18} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              {isRTL ? 'الأمان البيومتري وقفل الجهاز (WebAuthn)' : language === 'de' ? 'Biometrische Gerätesicherheit (WebAuthn)' : 'Biometric Security & Passkey Lock'}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {isRTL
+                ? 'فعّل Face ID أو Touch ID لتسريع التحقق على هذا الجهاز دون تخزين كلمات مرور.'
+                : language === 'de'
+                ? 'Aktivieren Sie Face ID oder Touch ID für schnelle Geräteprüfung.'
+                : 'Enroll Face ID, Touch ID, or device biometrics for rapid verification on this device.'}
+            </p>
+          </div>
+        </div>
+        <BiometricAuth
+          language={language}
+          userEmail={profile?.email || user?.email || ''}
+        />
       </div>
 
       {/* Change Password Modal */}

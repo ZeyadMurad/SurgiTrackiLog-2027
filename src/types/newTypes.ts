@@ -116,6 +116,7 @@ export type MediaSource =
   | 'websurg'
   | 'ctsnet'
   | 'youtube'
+  | 'youtubesurg'
   | 'medtube'
   | 'jsurg'
   | 'gms'

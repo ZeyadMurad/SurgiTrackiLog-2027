@@ -1026,7 +1026,10 @@ const aiProviderName = (): 'gemini' | 'pollinations-free' =>
 let _geminiClient: InstanceType<typeof GoogleGenAI> | null = null;
 const getGeminiClient = (): InstanceType<typeof GoogleGenAI> => {
   if (_geminiClient) return _geminiClient;
-  _geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  _geminiClient = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY || '',
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
   return _geminiClient;
 };
 
@@ -1297,6 +1300,92 @@ app.post(
     } catch (error: any) {
       console.error('Error in /api/gemini/case-suggestions:', error);
       return res.status(500).json({ error: error.message || 'AI suggestions unavailable.' });
+    }
+  }
+);
+
+
+// Endpoint: AI Surgical Mentor (V3 — proxied server-side, works with GEMINI_API_KEY or free fallback)
+app.post(
+  '/api/ai-mentor',
+  rateLimit('gemini-mentor', RATE_LIMITS.gemini.max, RATE_LIMITS.gemini.windowMs),
+  async (req, res) => {
+    try {
+      const lang = sanitizeLang(req.body?.language);
+      const userMessage = sanitizeText(req.body?.message, 2500).trim();
+      if (!userMessage) {
+        return res.status(400).json({ error: 'Message is required.' });
+      }
+
+      const rawHistory = Array.isArray(req.body?.history) ? req.body.history.slice(-10) : [];
+      const historyLines = rawHistory
+        .map((m: any) => {
+          const role = m?.role === 'assistant' ? 'Mentor' : 'Trainee';
+          const content = sanitizeText(m?.content, 1200).trim();
+          return content ? `${role}: ${content}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+
+      const stats = req.body?.portfolioStats && typeof req.body.portfolioStats === 'object'
+        ? req.body.portfolioStats
+        : null;
+
+      let portfolioBlock = '';
+      if (stats) {
+        const topProcs = Array.isArray(stats.topProcedures)
+          ? stats.topProcedures.slice(0, 6).map((p: any) => `${sanitizeText(p?.name, 80)} (${Number(p?.count) || 0})`).join(', ')
+          : '';
+        const bySpec = Array.isArray(stats.proceduresBySpecialty)
+          ? stats.proceduresBySpecialty.slice(0, 6).map((s: any) => `${sanitizeText(s?.specialty, 60)}: ${Number(s?.count) || 0}`).join(', ')
+          : '';
+        const skills = Array.isArray(stats.skillsMatrix)
+          ? stats.skillsMatrix.slice(0, 6).map((sk: any) => `${sanitizeText(sk?.skillName, 60)} (${sanitizeText(sk?.competencyStatus, 40)})`).join(', ')
+          : '';
+        portfolioBlock = `
+
+Trainee Surgical Portfolio Summary:
+- Total cases: ${Number(stats.totalCases) || 0}
+- Total procedures: ${Number(stats.totalProcedures) || 0}
+- Verified procedures: ${Number(stats.verifiedProcedures) || 0}
+- Total training hours: ${Number(stats.totalHours) || 0}
+- Verified hours: ${Number(stats.verifiedHours) || 0}
+- Top procedures: ${topProcs || 'N/A'}
+- Specialties: ${bySpec || 'N/A'}
+- Skills snapshot: ${skills || 'N/A'}`;
+      }
+
+      const langDirective =
+        lang === 'ar'
+          ? 'Respond in fluent, professional medical Arabic (using clear terminology with English/Latin anatomical or procedural terms in parentheses where helpful).'
+          : lang === 'de'
+          ? 'Antworten Sie auf präzisem medizinischem Deutsch (gemäß deutscher Weiterbildungsordnung und Fachbegriffen).'
+          : 'Respond in clear, structured clinical English.';
+
+      const SYSTEM_PROMPT = `You are SurgiTrack AI Mentor, an expert surgical education assistant for surgical trainees and surgeons inside SurgiTrack iLog 2027.
+Roles:
+1. Differential diagnosis reasoning based on clinical vignettes (educational only, not patient care).
+2. Surgical procedure preparation, anatomical landmarks, and critical safety steps (e.g., Critical View of Safety, nerve preservation).
+3. Personalized surgical portfolio gap analysis and training recommendations when portfolio data is provided.
+4. Reference real surgical society guidelines where relevant (SAGES, WSES, ESVS, ATLS, NCCN, EAU, DGAV).
+
+Rules:
+- Start briefly with an educational disclaimer when giving clinical guidance ("Educational guidance only — always follow supervising attending and institutional protocols.").
+- If asked about a real specific patient's active management, remind the user to consult the supervising physician.
+- Prefer structured bullet points over walls of text.
+- ${langDirective}`;
+
+      const fullPrompt = `${portfolioBlock ? portfolioBlock + '\n\n' : ''}${historyLines ? 'Conversation History:\n' + historyLines + '\n\n' : ''}Trainee Question:\n${userMessage}`;
+      const reply = await generateText(fullPrompt, SYSTEM_PROMPT, false, { cache: false });
+
+      return res.json({
+        reply: reply || 'Unable to generate a response at this moment.',
+        provider: aiProviderName(),
+      });
+    } catch (error: any) {
+      console.error('Error in /api/ai-mentor:', error);
+      const status = error?.message?.includes('FREE_AI_RATE_LIMIT') ? 429 : 500;
+      return res.status(status).json({ error: error?.message || 'AI Mentor unavailable.' });
     }
   }
 );
