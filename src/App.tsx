@@ -76,8 +76,8 @@ import { TraineePortfolioExportModal } from './components/TraineePortfolioExport
 import { YourPostsModal } from './components/YourPostsModal';
 import { GlobalAcademicFooter } from './components/GlobalAcademicFooter';
 import { CommunityThreadsView } from './components/CommunityThreadsView';
-import { VisualLibraryViewV3 } from './components/VisualLibraryViewV3';
-import { SurgicalAtlas } from './components/SurgicalAtlas';
+import { VisualLibraryV4 } from './components/VisualLibraryV4';
+import { SurgicalAtlas3D } from './components/SurgicalAtlas3D';
 import { useAppRefresh, timeSinceLastRefresh } from './lib/useAppRefresh';
 import { usePWA } from './lib/usePWA';
 import { SimulationLabView } from './components/SimulationLabView';
@@ -1398,7 +1398,7 @@ function SurgiTrackApp() {
 
               {dashboardTab === 'learning' && <LearningCurveView />}
               {dashboardTab === 'visual_library' && (
-                <VisualLibraryViewV3
+                <VisualLibraryV4
                   language={language}
                   currentUserId={profile?.userId || user?.uid || 'local-surgeon-001'}
                   savedMediaIds={savedVisualMediaIds}
@@ -1407,6 +1407,10 @@ function SurgiTrackApp() {
                   onOpenThreadForMedia={() => {
                     setCommunityTab('threads');
                     setActiveView('community');
+                  }}
+                  onOpenInAtlas={() => {
+                    setDashboardTab('surgical_atlas');
+                    setActiveView('dashboard');
                   }}
                 />
               )}
@@ -1420,8 +1424,14 @@ function SurgiTrackApp() {
                 />
               )}
               {dashboardTab === 'surgical_atlas' && (
-                <SurgicalAtlas
+                <SurgicalAtlas3D
                   language={language}
+                  existingVideos={communityCases}
+                  onNavigateToVideo={(queryOrVideoId) => {
+                    setVisualLibraryQuery(queryOrVideoId);
+                    setDashboardTab('visual_library');
+                    setActiveView('dashboard');
+                  }}
                   onStructureClick={(_structure, relatedProcedure) => {
                     setVisualLibraryQuery(relatedProcedure);
                     setDashboardTab('visual_library');
@@ -1497,7 +1507,7 @@ function SurgiTrackApp() {
                       <Images size={21} />
                     </div>
                     <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
-                      {savedVisualMediaIds.length} {isRTL ? 'محفوظ' : 'saved'}
+                      10 YT · 26 {isRTL ? 'فيديو' : 'videos'}
                     </span>
                   </div>
                   <div>
@@ -1505,7 +1515,7 @@ function SurgiTrackApp() {
                       {isRTL ? 'المكتبة المرئية الجراحية' : language === 'de' ? 'Chirurgische Mediathek' : 'Surgical Visual Library'}
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {isRTL ? 'فيديوهات عمليات حقيقية منتقاة ومختبرة عبر يوتيوب وWeBSurg وCTSNet.' : 'Curated, live-verified operative videos across YouTube, WeBSurg & CTSNet.'}
+                      {isRTL ? '10 قنوات يوتيوب جراحية وWeBSurg وCTSNet وVuMedi مع 26 فيديو عملية موثق.' : '10 surgical YouTube channels, WeBSurg, CTSNet & VuMedi + 26 verified operative videos.'}
                     </p>
                   </div>
                 </button>
@@ -1543,15 +1553,15 @@ function SurgiTrackApp() {
                       <Compass size={21} />
                     </div>
                     <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
-                      3D · 6 {isRTL ? 'طبقات' : 'layers'}
+                      3D · 147 {isRTL ? 'بنية' : 'GLB'}
                     </span>
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 group-hover:text-cyan-800 transition-colors">
-                      {isRTL ? 'الأطلس التشريحي ثلاثي الأبعاد' : language === 'de' ? '3D Anatomie-Atlas' : '3D Surgical Anatomy Atlas'}
+                      {isRTL ? 'الأطلس التشريحي ثلاثي الأبعاد' : language === 'de' ? '3D Anatomie-Atlas' : 'Surgical Atlas 3D'}
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {isRTL ? 'تشريح تفاعلي بالطبقات مع مناطق الخطر الجراحية وربط مباشر بالفيديوهات.' : 'Interactive 3D layered anatomy, danger zones & direct procedure video links.'}
+                      {isRTL ? 'نماذج GLB ثلاثية الأبعاد (ذكر وأنثى · 147 بنية) مع مناطق الخطر الجراحية.' : 'Real Male & Female 3D GLB models (147 structures), BodyParts3D hierarchy & danger zones.'}
                     </p>
                   </div>
                 </button>

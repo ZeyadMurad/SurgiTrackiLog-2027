@@ -5,7 +5,7 @@
 // Strategy: cache-first for app shell, network-first for API calls.
 // ============================================================================
 
-const CACHE_VERSION = 'surgitrack-v3-2027-v1';
+const CACHE_VERSION = 'surgitrack-v4-2027-v1';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
