@@ -1553,7 +1553,7 @@ function SurgiTrackApp() {
                       <Compass size={21} />
                     </div>
                     <span className="text-xs font-mono font-bold text-slate-500 tabular-nums">
-                      3D · 147 {isRTL ? 'بنية' : 'GLB'}
+                      3D · 3,210+147
                     </span>
                   </div>
                   <div>
@@ -1561,7 +1561,9 @@ function SurgiTrackApp() {
                       {isRTL ? 'الأطلس التشريحي ثلاثي الأبعاد' : language === 'de' ? '3D Anatomie-Atlas' : 'Surgical Atlas 3D'}
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {isRTL ? 'نماذج GLB ثلاثية الأبعاد (ذكر وأنثى · 147 بنية) مع مناطق الخطر الجراحية.' : 'Real Male & Female 3D GLB models (147 structures), BodyParts3D hierarchy & danger zones.'}
+                      {isRTL
+                        ? 'جسم كامل 3D (ذكر/أنثى · 147 بنية) + مكتبة BodyParts3D 4.3 (3,210 مجسم) و9 مجالات جراحية.'
+                        : 'Male & Female 3D workstation (147 GLB + 3,210 BodyParts3D 4.3 meshes) & 9 surgical domains.'}
                     </p>
                   </div>
                 </button>

@@ -6,6 +6,15 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import {
+  checkTigrisEnvPresence,
+  testTigrisConnection,
+  listTigrisPrefix,
+  getTigrisTextObject,
+  getTigrisAssetBuffer,
+  validateBodyPartsKey,
+} from './server/tigrisClient';
+import { searchBodyPartsRegistry, resolveBodyPartsStructure } from './server/bodypartsRegistry';
 
 dotenv.config();
 
@@ -88,6 +97,7 @@ const RATE_LIMITS = {
   pubmed: { max: 20, windowMs: 60 * 1000 },
   journals: { max: 30, windowMs: 60 * 1000 },                  // Europe PMC / Crossref / Cochrane proxy
   caseSuggestions: { max: 12, windowMs: 60 * 1000 },           // clinical AI case suggestions
+  tigris: { max: 10, windowMs: 60 * 1000 },                    // Tigris S3 connection test
 };
 
 // SECURITY FIX: whitelist of languages accepted by AI endpoints (prevents prompt
@@ -119,6 +129,124 @@ function resolveBaseUrl(req: Request): string {
 
 app.get('/api/health', (_req, res) => {
   res.status(200).json({ status: 'ok', port });
+});
+
+app.get('/api/tigris/status', rateLimit('tigris', RATE_LIMITS.tigris.max, RATE_LIMITS.tigris.windowMs), (_req, res) => {
+  const { envPresent, allEnvPresent } = checkTigrisEnvPresence();
+  res.status(200).json({ envPresent, allEnvPresent });
+});
+
+app.get('/api/tigris/test', rateLimit('tigris', RATE_LIMITS.tigris.max, RATE_LIMITS.tigris.windowMs), async (req, res) => {
+  const remoteAddr = req.socket?.remoteAddress || '';
+  const hasForwarded = Boolean(req.headers['x-forwarded-for']);
+  const isLoopback = !hasForwarded && (
+    remoteAddr === '127.0.0.1' ||
+    remoteAddr === '::1' ||
+    remoteAddr === '::ffff:127.0.0.1'
+  );
+  if (!isLoopback) {
+    return res.status(403).json({ error: 'Direct server loopback required for S3 bucket listing diagnostics.' });
+  }
+  const result = await testTigrisConnection('BodyParts3D_4.3/');
+  return res.status(result.connected ? 200 : 503).json(result);
+});
+
+app.get('/api/tigris/inspect', rateLimit('tigris', RATE_LIMITS.tigris.max, RATE_LIMITS.tigris.windowMs), async (req, res) => {
+  const remoteAddr = req.socket?.remoteAddress || '';
+  const hasForwarded = Boolean(req.headers['x-forwarded-for']);
+  const isLoopback = !hasForwarded && (
+    remoteAddr === '127.0.0.1' ||
+    remoteAddr === '::1' ||
+    remoteAddr === '::ffff:127.0.0.1'
+  );
+  if (!isLoopback) {
+    return res.status(403).json({ error: 'Direct server loopback required.' });
+  }
+  try {
+    const prefix = sanitizeText(req.query.prefix, 200) || 'BodyParts3D_4.3/';
+    const delimiter = req.query.delimiter ? String(req.query.delimiter).slice(0, 4) : undefined;
+    const textKey = req.query.textKey ? String(req.query.textKey) : undefined;
+    if (textKey) {
+      const text = await getTigrisTextObject(textKey, 128 * 1024);
+      return res.status(200).json({ key: textKey, preview: text.slice(0, 8000) });
+    }
+    const listing = await listTigrisPrefix(prefix, 200, delimiter);
+    return res.status(200).json(listing);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Inspect failed' });
+  }
+});
+
+// Rate-limited read-only BodyParts3D 4.3 catalog & asset proxy (never exposes Tigris credentials or makes bucket public)
+const atlasAssetCache = new Map<string, { buffer: Buffer; contentType: string; cachedAt: number }>();
+const ATLAS_ASSET_CACHE_TTL_MS = 30 * 60 * 1000;
+const ATLAS_MAX_CACHE_ITEMS = 48;
+
+app.get('/api/atlas/bodyparts/asset', rateLimit('tigris', 60, 60 * 1000), async (req, res) => {
+  try {
+    const rawKey = sanitizeText(req.query.key, 300);
+    const safeKey = validateBodyPartsKey(rawKey);
+    if (!safeKey) {
+      return res.status(400).json({ error: 'Invalid BodyParts3D asset key.' });
+    }
+    const cached = atlasAssetCache.get(safeKey);
+    if (cached && Date.now() - cached.cachedAt < ATLAS_ASSET_CACHE_TTL_MS) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('X-Atlas-Cache', 'HIT');
+      return res.status(200).send(cached.buffer);
+    }
+
+    const asset = await getTigrisAssetBuffer(safeKey);
+    if (asset.contentLength <= 6 * 1024 * 1024) {
+      if (atlasAssetCache.size >= ATLAS_MAX_CACHE_ITEMS) {
+        const oldestKey = atlasAssetCache.keys().next().value;
+        if (oldestKey) atlasAssetCache.delete(oldestKey);
+      }
+      atlasAssetCache.set(safeKey, {
+        buffer: asset.buffer,
+        contentType: asset.contentType,
+        cachedAt: Date.now(),
+      });
+    }
+    res.setHeader('Content-Type', asset.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-Atlas-Cache', 'MISS');
+    return res.status(200).send(asset.buffer);
+  } catch (err: any) {
+    const status = Number(err?.status) || 502;
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: err?.message || 'Unable to stream BodyParts3D asset.',
+      code: err?.code || 'ASSET_FETCH_FAILED',
+    });
+  }
+});
+
+app.get('/api/atlas/bodyparts/registry', rateLimit('tigris', 30, 60 * 1000), async (req, res) => {
+  try {
+    const query = sanitizeText(req.query.q, 120);
+    const system = sanitizeText(req.query.system, 30);
+    const region = sanitizeText(req.query.region, 30);
+    const vascularOnly = req.query.vascularOnly === 'true';
+    const limit = Number(req.query.limit) || 60;
+    const offset = Number(req.query.offset) || 0;
+    const result = await searchBodyPartsRegistry({ query, system, region, vascularOnly, limit, offset });
+    return res.status(200).json(result);
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message || 'BodyParts3D registry unavailable.' });
+  }
+});
+
+app.get('/api/atlas/bodyparts/resolve', rateLimit('tigris', 40, 60 * 1000), async (req, res) => {
+  try {
+    const fmaId = sanitizeText(req.query.fmaId, 32);
+    const query = sanitizeText(req.query.q, 120);
+    const maxParts = Number(req.query.maxParts) || 20;
+    const result = await resolveBodyPartsStructure({ fmaId, query, maxParts });
+    return res.status(200).json(result);
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message || 'BodyParts3D structure resolution failed.' });
+  }
 });
 
 // Lazy init GoogleGenAI

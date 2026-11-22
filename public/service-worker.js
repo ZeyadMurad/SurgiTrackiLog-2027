@@ -5,7 +5,7 @@
 // Strategy: cache-first for app shell, network-first for API calls.
 // ============================================================================
 
-const CACHE_VERSION = 'surgitrack-v4-2027-v1';
+const CACHE_VERSION = 'surgitrack-v5-2027-atlas-hud';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -67,6 +67,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // Never cache backend API responses (Tigris BodyParts3D assets/registry/health)
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) {
+    return;
+  }
 
   // === Same-origin requests: cache-first with network fallback ===
   if (url.origin === self.location.origin) {
